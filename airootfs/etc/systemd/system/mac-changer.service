@@ -1,0 +1,21 @@
+[Unit]
+Description=MAC Address Randomizer (once at boot)
+# Run after NetworkManager so nmcli disconnect/connect works; wait-online keeps
+# the change to the very start of the session.
+After=NetworkManager.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/mkdir -p /var/log/mac-changer
+ExecStart=/usr/local/bin/mac_anonymizer.py
+# Mark that the boot pass is done so per-adapter hotplug units (mac-changer@)
+# only fire for adapters plugged in AFTER boot, not for the boot-time coldplug.
+ExecStartPost=/usr/bin/mkdir -p /run/maze
+ExecStartPost=/usr/bin/touch /run/maze/mac-changer.booted
+StandardOutput=append:/var/log/mac-changer/mac-changer.log
+StandardError=append:/var/log/mac-changer/mac-changer.log
+
+[Install]
+WantedBy=multi-user.target

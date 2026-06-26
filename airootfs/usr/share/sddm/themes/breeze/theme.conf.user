@@ -1,0 +1,6 @@
+# Maze Linux override for the Breeze SDDM greeter (SDDM merges theme.conf.user
+# over the package's theme.conf, so package updates never clobber this).
+# Show the default Maze wallpaper behind the Breeze login UI.
+[General]
+type=image
+background=/usr/share/wallpapers/Maze/contents/images/3344x1882.png

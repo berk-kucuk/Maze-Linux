@@ -1,0 +1,5 @@
+Maze Linux customized fork of archinstall
+Upstream: https://github.com/archlinux/archinstall
+Base version: 4.3
+Vendored at build profile path: /opt/maze-archinstall
+Run via: PYTHONPATH=/opt/maze-archinstall python -m archinstall

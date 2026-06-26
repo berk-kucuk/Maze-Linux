@@ -1,0 +1,149 @@
+from enum import Enum
+
+from archinstall.lib.locale.utils import list_timezones
+from archinstall.lib.log import warn
+from archinstall.lib.menu.helpers import Confirmation, Input, Selection
+from archinstall.lib.translationhandler import Language, tr
+from archinstall.tui.menu_item import MenuItem, MenuItemGroup
+from archinstall.tui.result import ResultType
+
+
+class PostInstallationAction(Enum):
+	EXIT = tr('Exit installer')
+	REBOOT = tr('Reboot system')
+	CHROOT = tr('chroot into installation for post-installation configurations')
+
+
+async def select_ntp(preset: bool = True) -> bool:
+	header = tr('Would you like to use automatic time synchronization (NTP) with the default time servers?\n') + '\n'
+	header += (
+		tr(
+			'Hardware time and other post-configuration steps might be required in order for NTP to work.\nFor more information, please check the Arch wiki',
+		)
+		+ '\n'
+	)
+
+	result = await Confirmation(
+		header=header,
+		allow_skip=True,
+		preset=preset,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Selection:
+			return result.item() == MenuItem.yes()
+		case _:
+			raise ValueError('Unhandled return type')
+
+
+async def select_hostname(preset: str | None = None) -> str | None:
+	result = await Input(
+		header=tr('Enter a hostname'),
+		allow_skip=True,
+		default_value=preset,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Selection:
+			hostname = result.get_value()
+			if len(hostname) < 1:
+				return None
+			return hostname
+		case ResultType.Reset:
+			raise ValueError('Unhandled result type')
+
+
+async def select_timezone(preset: str | None = None) -> str | None:
+	default = 'UTC'
+	timezones = list_timezones()
+
+	items = [MenuItem(tz, value=tz) for tz in timezones]
+	group = MenuItemGroup(items, sort_items=True)
+	group.set_selected_by_value(preset)
+	group.set_default_by_value(default)
+
+	result = await Selection[str](
+		group,
+		header=tr('Select timezone'),
+		allow_reset=True,
+		allow_skip=True,
+		enable_filter=True,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Reset:
+			return default
+		case ResultType.Selection:
+			return result.get_value()
+
+
+async def select_language(preset: str | None = None) -> str | None:
+	from archinstall.lib.locale.locale_menu import select_kb_layout
+
+	# We'll raise an exception in an upcoming version.
+	# from ..exceptions import Deprecated
+	# raise Deprecated("select_language() has been deprecated, use select_kb_layout() instead.")
+
+	# No need to translate this i feel, as it's a short lived message.
+	warn('select_language() is deprecated, use select_kb_layout() instead. select_language() will be removed in a future version')
+
+	return await select_kb_layout(preset)
+
+
+async def select_archinstall_language(languages: list[Language], preset: Language) -> Language:
+	# these are the displayed language names which can either be
+	# the english name of a language or, if present, the
+	# name of the language in its own language
+
+	items = [MenuItem(lang.display_name, lang) for lang in languages]
+	group = MenuItemGroup(items, sort_items=True)
+	group.set_focus_by_value(preset)
+
+	title = 'NOTE: Console font will be set automatically for supported languages.\n'
+	title += 'For other languages, fonts can be found in "/usr/share/kbd/consolefonts"\n'
+	title += 'and set manually with: setfont <fontname>\n'
+
+	result = await Selection[Language](
+		header=title,
+		group=group,
+		allow_reset=False,
+		allow_skip=True,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Selection:
+			return result.get_value()
+		case ResultType.Reset:
+			raise ValueError('Language selection not handled')
+
+
+async def select_post_installation(elapsed_time: float | None = None) -> PostInstallationAction:
+	header = 'Installation completed'
+	if elapsed_time is not None:
+		minutes = int(elapsed_time // 60)
+		seconds = int(elapsed_time % 60)
+		header += f' in {minutes}m{seconds}s' + '\n'
+	header += tr('What would you like to do next?') + '\n'
+
+	items = [MenuItem(action.value, value=action) for action in PostInstallationAction]
+	group = MenuItemGroup(items)
+
+	result = await Selection[PostInstallationAction](
+		group,
+		header=header,
+		allow_skip=False,
+	).show()
+
+	match result.type_:
+		case ResultType.Selection:
+			return result.get_value()
+		case _:
+			raise ValueError('Post installation action not handled')

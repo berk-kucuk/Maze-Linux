@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#
+# maze-flatpak-setup — Register the Flathub remote on the first ONLINE boot.
+#
+# Doing this during the ISO build fails: the build chroot has no initialised
+# CA trust store, so `flatpak remote-add <url>` errors with an SSL CA problem.
+# Running it once at first boot (when the network and CA certs are ready)
+# guarantees Flathub is configured. A stamp file makes this a one-shot.
+#
+set -uo pipefail
+
+STAMP_DIR="/var/lib/maze"
+STAMP="${STAMP_DIR}/flatpak-setup.done"
+
+command -v flatpak >/dev/null 2>&1 || exit 0
+[[ -f "${STAMP}" ]] && exit 0
+
+mkdir -p "${STAMP_DIR}"
+
+if flatpak remote-add --system --if-not-exists flathub \
+        https://flathub.org/repo/flathub.flatpakrepo; then
+    touch "${STAMP}"
+    echo "maze-flatpak-setup: Flathub remote registered."
+else
+    echo "maze-flatpak-setup: could not reach Flathub yet; will retry next boot." >&2
+    exit 1
+fi

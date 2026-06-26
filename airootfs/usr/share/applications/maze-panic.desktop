@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Maze Panic Mode
+GenericName=Emergency trace wipe
+Comment=Cut all network, wipe logs & shell history, clear clipboard and lock the screen
+Exec=/usr/local/bin/maze-panic
+Icon=/usr/share/pixmaps/maze-panic.svg
+Terminal=false
+Categories=System;Security;
+Keywords=panic;emergency;wipe;privacy;security;lock;

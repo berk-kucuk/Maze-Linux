@@ -1,0 +1,893 @@
+#!/usr/bin/env python3
+"""maze-installer-gui — modern dark Qt front-end for the Maze Linux installer.
+
+This is a *thin* GUI: it only collects the user's choices and then drives the
+existing, battle-tested install engine. It never imports archinstall. On the
+final step it:
+
+  1. writes the answers to a small JSON file,
+  2. runs `sudo maze-installer-config gen ...` to turn them into the archinstall
+     config + creds files, and
+  3. runs `sudo maze-install --silent`, streaming the engine's output into the
+     log view.
+
+The GUI mirrors every *visible* option of the Maze TUI menu: Locales, Mirrors &
+optional repositories, Disk, Swap (zram), Bootloader/Secure Boot, Kernels,
+Hostname, Authentication, Graphics driver, Timezone and NTP. The options the
+Maze fork deliberately hides in the TUI (Network, Applications, Pacman,
+Additional packages) are kept at their Maze defaults here too.
+
+The CLI/TUI installer (`maze-install` / `mazeinstaller --cli`) is unaffected —
+this is purely an alternative front-end, launched via `mazeinstaller --gui`
+(which is what the dock / "Install Maze Linux" launcher calls).
+
+Runs as the normal live user (so the Wayland/X session is reachable); only the
+privileged steps are elevated with sudo, which is passwordless on the live ISO.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import zoneinfo
+from pathlib import Path
+
+try:
+    from PySide6.QtCore import (
+        QEasingCurve,
+        QPropertyAnimation,
+        QProcess,
+        QRect,
+        QRectF,
+        Qt,
+        QVariantAnimation,
+    )
+    from PySide6.QtGui import (
+        QColor,
+        QFont,
+        QIcon,
+        QImage,
+        QPainter,
+        QPixmap,
+        QRadialGradient,
+    )
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QFrame,
+        QGraphicsBlurEffect,
+        QGraphicsOpacityEffect,
+        QGraphicsPixmapItem,
+        QGraphicsScene,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QPlainTextEdit,
+        QProgressBar,
+        QPushButton,
+        QScrollArea,
+        QStackedWidget,
+        QVBoxLayout,
+        QWidget,
+    )
+except ImportError:
+    sys.stderr.write(
+        'maze-installer-gui: PySide6 is required (pacman -S pyside6).\n'
+        'Falling back to the terminal installer: run `mazeinstaller --cli`.\n'
+    )
+    raise SystemExit(1)
+
+# OLED theme: pure-black background, WHITE accent (no colour).
+ACCENT = '#ffffff'
+ACCENT_DIM = '#d6d6dc'
+# Big centred logo on the Welcome page.
+LOGO_PATH = '/usr/share/pixmaps/maze-logo.png'
+# Small sidebar mark (top-left); first existing wins.
+BRAND_LOGOS = [
+    '/usr/share/pixmaps/maze-simple-logo.png',
+    '/usr/share/pixmaps/maze-logo.png',
+]
+# Window/taskbar icon — same as the dock launcher's Icon= so the running window
+# shows that icon (paired with the app_id matching below).
+ICON_PATH = '/usr/share/pixmaps/maze-installer.png'
+# Must equal the launcher's .desktop basename (maze-install.desktop). On Wayland
+# Qt uses this as the xdg app_id, which Plasma's Task Manager matches back to the
+# launcher so the running installer groups under the SAME dock icon instead of
+# appearing as a separate entry.
+DESKTOP_FILE = 'maze-install'
+
+# Curated, offline-safe choices. sys_lang is the *installed system* locale; the
+# keyboard layout is the console/X layout. Both can be extended freely.
+LANGUAGES = [
+    ('English (US)', 'en_US.UTF-8'),
+    ('Türkçe', 'tr_TR.UTF-8'),
+    ('Deutsch', 'de_DE.UTF-8'),
+    ('Français', 'fr_FR.UTF-8'),
+    ('Español', 'es_ES.UTF-8'),
+    ('Italiano', 'it_IT.UTF-8'),
+    ('Português (BR)', 'pt_BR.UTF-8'),
+    ('Русский', 'ru_RU.UTF-8'),
+    ('日本語', 'ja_JP.UTF-8'),
+]
+KEYBOARDS = ['us', 'tr', 'de', 'fr', 'es', 'it', 'gb', 'ru', 'us-intl']
+
+# (label, archinstall package name). The first is the default kernel.
+KERNELS = [
+    ('linux (stable)', 'linux'),
+    ('linux-lts (long-term)', 'linux-lts'),
+    ('linux-zen (desktop tuned)', 'linux-zen'),
+    ('linux-hardened (security)', 'linux-hardened'),
+]
+# (label, GfxDriver.value) — must match archinstall's GfxDriver enum exactly.
+GPU_DRIVERS = [
+    ('Automatic — all open-source (recommended)', 'All open-source'),
+    ('AMD / ATI (open-source)', 'AMD / ATI (open-source)'),
+    ('Intel (open-source)', 'Intel (open-source)'),
+    ('NVIDIA — open kernel module (Turing+)', 'Nvidia (open kernel module for newer GPUs, Turing+)'),
+    ('NVIDIA — nouveau (open-source)', 'Nvidia (open-source nouveau driver)'),
+    ('VirtualBox (open-source)', 'VirtualBox (open-source)'),
+]
+
+STEPS = ['Welcome', 'Language', 'Mirrors', 'Disk', 'System', 'Account', 'Summary', 'Install']
+
+# Panels are translucent "frosted glass" so the blurred backdrop shows through;
+# the accent is white. Pure black comes from the Backdrop widget, not from here.
+QSS = f"""
+* {{ outline: none; }}
+QWidget {{ background: transparent; color: #f2f2f7; font-size: 14px; }}
+#Sidebar {{ background: rgba(255,255,255,0.045); border-right: 1px solid rgba(255,255,255,0.07); }}
+#SidebarTitle {{ font-size: 18px; font-weight: 700; color: #ffffff; }}
+#Step {{ color: rgba(255,255,255,0.45); padding: 9px 14px; border-radius: 8px; }}
+#StepActive {{
+    color: #ffffff; padding: 9px 14px; border-radius: 8px;
+    background: rgba(255,255,255,0.12);
+    border-left: 3px solid {ACCENT};
+}}
+#StepDone {{ color: rgba(255,255,255,0.75); padding: 9px 14px; border-radius: 8px; }}
+#Title {{ font-size: 26px; font-weight: 700; color: #ffffff; }}
+#Subtitle {{ font-size: 14px; color: rgba(255,255,255,0.55); }}
+#FieldLabel {{ color: rgba(255,255,255,0.70); font-size: 13px; }}
+#Note {{ color: rgba(255,255,255,0.42); font-size: 12px; }}
+#Warn {{
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 8px; padding: 10px 12px; color: #ffffff;
+}}
+#Card {{ background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; }}
+QLineEdit, QComboBox {{
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+    padding: 9px 11px; color: #ffffff;
+    selection-background-color: #ffffff; selection-color: #000000;
+}}
+QLineEdit:focus, QComboBox:focus {{ border: 1px solid {ACCENT}; background: rgba(255,255,255,0.09); }}
+QComboBox::drop-down {{ border: none; width: 26px; }}
+QComboBox QAbstractItemView {{
+    background: #0a0a0a; border: 1px solid rgba(255,255,255,0.18);
+    selection-background-color: rgba(255,255,255,0.16); color: #f2f2f7;
+}}
+QCheckBox {{ color: rgba(255,255,255,0.85); spacing: 9px; }}
+QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.30); background: rgba(255,255,255,0.06); }}
+QCheckBox::indicator:checked {{ background: {ACCENT}; border: 1px solid {ACCENT}; }}
+QPushButton {{
+    background: {ACCENT}; color: #000000; border: none; border-radius: 8px;
+    padding: 10px 22px; font-weight: 700;
+}}
+QPushButton:hover {{ background: {ACCENT_DIM}; }}
+QPushButton:disabled {{ background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.40); }}
+QPushButton#Ghost {{ background: transparent; color: #f2f2f7; border: 1px solid rgba(255,255,255,0.22); }}
+QPushButton#Ghost:hover {{ border: 1px solid {ACCENT}; color: #ffffff; background: rgba(255,255,255,0.06); }}
+QProgressBar {{ background: rgba(255,255,255,0.08); border: none; border-radius: 6px; height: 10px; text-align: center; }}
+QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
+QPlainTextEdit {{
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+    color: #d6d6e0; font-family: monospace; font-size: 12px; padding: 10px;
+}}
+QScrollArea {{ background: transparent; border: none; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.18); border-radius: 5px; min-height: 30px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+"""
+
+
+def _blur_pixmap(src: QPixmap, radius: float) -> QPixmap:
+    """Run a QPixmap through a real Gaussian blur (QGraphicsBlurEffect), once."""
+    scene = QGraphicsScene()
+    item = QGraphicsPixmapItem(src)
+    effect = QGraphicsBlurEffect()
+    effect.setBlurRadius(radius)
+    item.setGraphicsEffect(effect)
+    scene.addItem(item)
+    out = QImage(src.size(), QImage.Format_ARGB32_Premultiplied)
+    out.fill(Qt.transparent)
+    painter = QPainter(out)
+    scene.render(painter, QRectF(out.rect()), QRectF(src.rect()))
+    painter.end()
+    return QPixmap.fromImage(out)
+
+
+def _make_glow(size: int = 460) -> QPixmap:
+    """A soft white radial bloom, blurred — the OLED 'light through frosted glass'."""
+    base = QPixmap(size, size)
+    base.fill(Qt.transparent)
+    p = QPainter(base)
+    p.setRenderHint(QPainter.Antialiasing)
+    grad = QRadialGradient(size / 2, size / 2, size / 2)
+    grad.setColorAt(0.0, QColor(255, 255, 255, 150))
+    grad.setColorAt(0.45, QColor(255, 255, 255, 45))
+    grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+    p.fillRect(0, 0, size, size, grad)
+    p.end()
+    return _blur_pixmap(base, 60)
+
+
+class Backdrop(QWidget):
+    """Pure-black OLED canvas with two animated, blurred white light blooms.
+
+    Sits behind the (translucent) sidebar and content so the glow bleeds through
+    the frosted panels. The bloom gently pulses via the `alpha` animation.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._glow = _make_glow()
+        self._alpha = 0.08
+
+    def set_alpha(self, value: float) -> None:
+        self._alpha = value
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor('#000000'))
+        w, h = self.width(), self.height()
+        p.setOpacity(self._alpha)
+        g = self._glow
+        p.drawPixmap(QRect(-140, -160, 560, 560), g)        # top-left, behind the logo
+        p.drawPixmap(QRect(w - 420, h - 380, 560, 560), g)  # bottom-right
+        p.end()
+
+
+def list_disks() -> list[tuple[str, str]]:
+    """Return [(label, /dev/path)] of whole, writable target disks via lsblk."""
+    try:
+        out = subprocess.run(
+            ['lsblk', '-dnJ', '-o', 'NAME,SIZE,MODEL,TYPE,RM,RO'],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        data = json.loads(out)
+    except Exception:
+        return []
+    disks = []
+    for d in data.get('blockdevices', []):
+        name = d.get('name', '')
+        # Real, writable disks only: skip read-only media and virtual block
+        # devices (zram swap, device-mapper/RAID nodes) that are never install
+        # targets even though lsblk reports them as type "disk".
+        if d.get('type') != 'disk' or d.get('ro'):
+            continue
+        if name.startswith(('zram', 'dm-', 'md', 'loop', 'ram')):
+            continue
+        size = d.get('size', '?')
+        model = (d.get('model') or '').strip() or 'Disk'
+        flag = ' (removable)' if d.get('rm') else ''
+        disks.append((f'{name} — {size}  {model}{flag}', f'/dev/{name}'))
+    return disks
+
+
+def field(label: str, widget: QWidget) -> QWidget:
+    box = QWidget()
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(6)
+    lbl = QLabel(label)
+    lbl.setObjectName('FieldLabel')
+    lay.addWidget(lbl)
+    lay.addWidget(widget)
+    return box
+
+
+class Installer(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle('Install Maze Linux')
+        self.resize(1000, 680)
+        self.setStyleSheet(QSS)
+
+        self._proc: QProcess | None = None
+        self._installing = False
+        self._page_anim: QPropertyAnimation | None = None
+
+        # OLED backdrop: pure-black canvas with animated blurred white blooms,
+        # sitting behind the translucent panels (lowered below the layout).
+        self._backdrop = Backdrop(self)
+        self._backdrop.lower()
+        self._glow_anim = QVariantAnimation(self)
+        self._glow_anim.setDuration(5000)
+        self._glow_anim.setKeyValueAt(0.0, 0.06)
+        self._glow_anim.setKeyValueAt(0.5, 0.13)
+        self._glow_anim.setKeyValueAt(1.0, 0.06)
+        self._glow_anim.setLoopCount(-1)
+        self._glow_anim.setEasingCurve(QEasingCurve.InOutSine)
+        self._glow_anim.valueChanged.connect(lambda v: self._backdrop.set_alpha(float(v)))
+        self._glow_anim.start()
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ---- sidebar ----
+        sidebar = QWidget()
+        sidebar.setObjectName('Sidebar')
+        sidebar.setFixedWidth(220)
+        sb = QVBoxLayout(sidebar)
+        sb.setContentsMargins(20, 22, 16, 20)
+        sb.setSpacing(3)
+        # App logo (top-left) + wordmark.
+        brand = QHBoxLayout()
+        brand.setSpacing(10)
+        brand.setContentsMargins(0, 0, 0, 16)
+        logo_path = next((p for p in BRAND_LOGOS if os.path.exists(p)), None)
+        if logo_path:
+            logo = QLabel()
+            pm = QPixmap(logo_path)
+            if not pm.isNull():
+                logo.setPixmap(pm.scaledToHeight(34, Qt.SmoothTransformation))
+                brand.addWidget(logo)
+        title = QLabel('Maze Linux')
+        title.setObjectName('SidebarTitle')
+        brand.addWidget(title)
+        brand.addStretch(1)
+        sb.addLayout(brand)
+        self._step_labels: list[QLabel] = []
+        for i, name in enumerate(STEPS):
+            lab = QLabel(f'{i + 1}.  {name}')
+            lab.setObjectName('Step')
+            self._step_labels.append(lab)
+            sb.addWidget(lab)
+        sb.addStretch(1)
+        root.addWidget(sidebar)
+
+        # ---- content ----
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(40, 34, 40, 24)
+        rl.setSpacing(16)
+        self._stack = QStackedWidget()
+        rl.addWidget(self._stack, 1)
+
+        self._stack.addWidget(self._page_welcome())
+        self._stack.addWidget(self._page_language())
+        self._stack.addWidget(self._page_mirrors())
+        self._stack.addWidget(self._page_disk())
+        self._stack.addWidget(self._page_system())
+        self._stack.addWidget(self._page_account())
+        self._stack.addWidget(self._page_summary())
+        self._stack.addWidget(self._page_install())
+
+        # ---- nav bar ----
+        nav = QHBoxLayout()
+        self._err = QLabel('')
+        self._err.setStyleSheet('color:#ffffff; font-weight:600;')
+        nav.addWidget(self._err, 1)
+        self._back = QPushButton('Back')
+        self._back.setObjectName('Ghost')
+        self._back.clicked.connect(self._go_back)
+        self._next = QPushButton('Next')
+        self._next.clicked.connect(self._go_next)
+        nav.addWidget(self._back)
+        nav.addWidget(self._next)
+        rl.addLayout(nav)
+        root.addWidget(right, 1)
+
+        self._index = 0
+        self._refresh()
+
+    # ----- page helpers ----------------------------------------------------
+    def _scroll_page(self) -> tuple[QWidget, QVBoxLayout]:
+        """A scrollable page body (for the taller config pages)."""
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        lay = QVBoxLayout(inner)
+        lay.setContentsMargins(2, 2, 12, 2)
+        lay.setSpacing(16)
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+        return page, lay
+
+    def _heading(self, lay: QVBoxLayout, title: str, subtitle: str) -> None:
+        t = QLabel(title)
+        t.setObjectName('Title')
+        s = QLabel(subtitle)
+        s.setObjectName('Subtitle')
+        s.setWordWrap(True)
+        lay.addWidget(t)
+        lay.addWidget(s)
+        lay.addSpacing(6)
+
+    # ----- pages -----------------------------------------------------------
+    def _page_welcome(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(14)
+        lay.addStretch(1)
+        if os.path.exists(LOGO_PATH):
+            logo = QLabel()
+            pm = QPixmap(LOGO_PATH)
+            if not pm.isNull():
+                logo.setPixmap(pm.scaledToHeight(96, Qt.SmoothTransformation))
+                logo.setAlignment(Qt.AlignCenter)
+                lay.addWidget(logo)
+        t = QLabel('Welcome to Maze Linux')
+        t.setObjectName('Title')
+        t.setAlignment(Qt.AlignCenter)
+        s = QLabel(
+            'A privacy-first, AI-native Arch desktop.\n'
+            'This installer will set up Maze Linux on your computer.'
+        )
+        s.setObjectName('Subtitle')
+        s.setAlignment(Qt.AlignCenter)
+        lay.addWidget(t)
+        lay.addWidget(s)
+        lay.addStretch(2)
+        return w
+
+    def _page_language(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(16)
+        self._heading(lay, 'Language & region', 'Pick the system language, keyboard layout and timezone.')
+
+        self.cmb_lang = QComboBox()
+        for label, code in LANGUAGES:
+            self.cmb_lang.addItem(label, code)
+        lay.addWidget(field('System language', self.cmb_lang))
+
+        self.cmb_kb = QComboBox()
+        self.cmb_kb.addItems(KEYBOARDS)
+        lay.addWidget(field('Keyboard layout', self.cmb_kb))
+
+        self.cmb_tz = QComboBox()
+        for tz in sorted(zoneinfo.available_timezones()):
+            self.cmb_tz.addItem(tz)
+        idx = self.cmb_tz.findText('UTC')
+        if idx >= 0:
+            self.cmb_tz.setCurrentIndex(idx)
+        lay.addWidget(field('Timezone', self.cmb_tz))
+
+        self.chk_ntp = QCheckBox('Sync the clock automatically over the network (NTP)')
+        self.chk_ntp.setChecked(True)
+        lay.addWidget(self.chk_ntp)
+        lay.addStretch(1)
+        return w
+
+    def _page_mirrors(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(14)
+        self._heading(lay, 'Mirrors & repositories', 'Enable extra package repositories.')
+
+        self.chk_multilib = QCheckBox('multilib  —  32-bit packages (required for Steam)')
+        self.chk_multilib.setChecked(True)
+        lay.addWidget(self.chk_multilib)
+
+        self.chk_testing = QCheckBox('testing  —  bleeding-edge packages (not recommended)')
+        self.chk_testing.setChecked(False)
+        lay.addWidget(self.chk_testing)
+
+        note = QLabel(
+            'Download mirrors are selected and ranked automatically (reflector), '
+            'so there is no mirror list to configure here.'
+        )
+        note.setObjectName('Note')
+        note.setWordWrap(True)
+        lay.addSpacing(6)
+        lay.addWidget(note)
+        lay.addStretch(1)
+        return w
+
+    def _page_disk(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(16)
+        self._heading(lay, 'Installation disk', 'Maze will be installed on the selected disk.')
+
+        warn = QLabel('⚠  The entire selected disk will be ERASED. Back up anything important first.')
+        warn.setObjectName('Warn')
+        warn.setWordWrap(True)
+        lay.addWidget(warn)
+
+        row = QHBoxLayout()
+        self.cmb_disk = QComboBox()
+        row.addWidget(self.cmb_disk, 1)
+        refresh = QPushButton('Refresh')
+        refresh.setObjectName('Ghost')
+        refresh.clicked.connect(self._reload_disks)
+        row.addWidget(refresh)
+        disk_box = QWidget()
+        disk_box.setLayout(row)
+        lay.addWidget(field('Target disk', disk_box))
+
+        self.chk_encrypt = QCheckBox('Encrypt the disk (LUKS full-disk encryption)')
+        self.chk_encrypt.toggled.connect(self._toggle_encrypt)
+        lay.addWidget(self.chk_encrypt)
+
+        self.enc_pw = QLineEdit()
+        self.enc_pw.setEchoMode(QLineEdit.Password)
+        self.enc_pw.setPlaceholderText('Encryption passphrase')
+        self.enc_pw2 = QLineEdit()
+        self.enc_pw2.setEchoMode(QLineEdit.Password)
+        self.enc_pw2.setPlaceholderText('Confirm passphrase')
+        self._enc_box = QWidget()
+        eb = QVBoxLayout(self._enc_box)
+        eb.setContentsMargins(0, 0, 0, 0)
+        eb.setSpacing(10)
+        eb.addWidget(self.enc_pw)
+        eb.addWidget(self.enc_pw2)
+        self._enc_box.setVisible(False)
+        lay.addWidget(self._enc_box)
+        lay.addStretch(1)
+        self._reload_disks()
+        return w
+
+    def _page_system(self) -> QWidget:
+        page, lay = self._scroll_page()
+        self._heading(lay, 'System', 'Kernels, graphics driver, swap and boot security.')
+
+        # Kernels (multi-select; at least one).
+        self.kernel_checks: dict[str, QCheckBox] = {}
+        kbox = QVBoxLayout()
+        kbox.setSpacing(8)
+        for label, pkg in KERNELS:
+            cb = QCheckBox(label)
+            cb.setChecked(pkg == 'linux')
+            self.kernel_checks[pkg] = cb
+            kbox.addWidget(cb)
+        kwidget = QWidget()
+        kwidget.setLayout(kbox)
+        lay.addWidget(field('Kernels', kwidget))
+
+        # Graphics driver.
+        self.cmb_gpu = QComboBox()
+        for label, value in GPU_DRIVERS:
+            self.cmb_gpu.addItem(label, value)
+        lay.addWidget(field('Graphics driver', self.cmb_gpu))
+
+        # Swap + Secure Boot.
+        self.chk_swap = QCheckBox('Enable zram compressed-RAM swap (recommended)')
+        self.chk_swap.setChecked(True)
+        lay.addWidget(self.chk_swap)
+
+        self.chk_sb = QCheckBox('Enable Secure Boot (systemd-boot + UKI, recommended)')
+        self.chk_sb.setChecked(True)
+        lay.addWidget(self.chk_sb)
+        lay.addStretch(1)
+        return page
+
+    def _page_account(self) -> QWidget:
+        page, lay = self._scroll_page()
+        self._heading(lay, 'Your account', 'Create your user and name this computer.')
+
+        self.ed_host = QLineEdit('maze')
+        lay.addWidget(field('Hostname', self.ed_host))
+        self.ed_user = QLineEdit('maze')
+        lay.addWidget(field('Username', self.ed_user))
+
+        self.ed_pw = QLineEdit()
+        self.ed_pw.setEchoMode(QLineEdit.Password)
+        lay.addWidget(field('Password', self.ed_pw))
+        self.ed_pw2 = QLineEdit()
+        self.ed_pw2.setEchoMode(QLineEdit.Password)
+        lay.addWidget(field('Confirm password', self.ed_pw2))
+
+        self.ed_root = QLineEdit()
+        self.ed_root.setEchoMode(QLineEdit.Password)
+        self.ed_root.setPlaceholderText('Leave empty to disable the root account')
+        lay.addWidget(field('Root password (optional)', self.ed_root))
+        lay.addStretch(1)
+        return page
+
+    def _page_summary(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(14)
+        self._heading(lay, 'Review', 'Confirm your choices before installing.')
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self._summary = QLabel()
+        self._summary.setWordWrap(True)
+        self._summary.setTextFormat(Qt.RichText)
+        self._summary.setAlignment(Qt.AlignTop)
+        self._summary.setContentsMargins(16, 16, 16, 16)
+        card = QFrame()
+        card.setObjectName('Card')
+        cl = QVBoxLayout(card)
+        cl.addWidget(self._summary)
+        scroll.setWidget(card)
+        lay.addWidget(scroll, 1)
+        return w
+
+    def _page_install(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setSpacing(14)
+        self._heading(lay, 'Installing Maze Linux', 'Sit tight — this takes a while. Do not power off.')
+        self._bar = QProgressBar()
+        self._bar.setRange(0, 0)  # indeterminate until started
+        self._bar.setVisible(False)
+        lay.addWidget(self._bar)
+        self._log = QPlainTextEdit()
+        self._log.setReadOnly(True)
+        lay.addWidget(self._log, 1)
+        return w
+
+    # ----- backdrop & animation -------------------------------------------
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._backdrop.setGeometry(0, 0, self.width(), self.height())
+
+    def _animate_page(self) -> None:
+        """Fade the current wizard page in for a smooth transition."""
+        page = self._stack.currentWidget()
+        if page is None:
+            return
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b'opacity', self)
+        anim.setDuration(240)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        # Drop the effect when done so input/painting are unaffected afterwards.
+        anim.finished.connect(lambda: page.setGraphicsEffect(None))
+        anim.start()
+        self._page_anim = anim
+
+    # ----- navigation ------------------------------------------------------
+    def _reload_disks(self) -> None:
+        self.cmb_disk.clear()
+        disks = list_disks()
+        if not disks:
+            self.cmb_disk.addItem('No disks detected', None)
+        for label, path in disks:
+            self.cmb_disk.addItem(label, path)
+
+    def _toggle_encrypt(self, on: bool) -> None:
+        self._enc_box.setVisible(on)
+
+    def _refresh(self) -> None:
+        for i, lab in enumerate(self._step_labels):
+            if i < self._index:
+                lab.setObjectName('StepDone')
+            elif i == self._index:
+                lab.setObjectName('StepActive')
+            else:
+                lab.setObjectName('Step')
+            lab.style().unpolish(lab)
+            lab.style().polish(lab)
+        self._stack.setCurrentIndex(self._index)
+        self._animate_page()
+        self._err.setText('')
+        self._back.setVisible(self._index > 0 and not self._installing)
+        last = len(STEPS) - 1
+        if self._index == last - 1:      # summary page
+            self._next.setText('Install')
+            self._next.setVisible(True)
+        elif self._index == last:        # install page
+            self._next.setVisible(False)
+        else:
+            self._next.setText('Next')
+            self._next.setVisible(True)
+        if self._index == last - 1:
+            self._summary.setText(self._summary_html())
+
+    def _go_back(self) -> None:
+        if self._index > 0 and not self._installing:
+            self._index -= 1
+            self._refresh()
+
+    def _go_next(self) -> None:
+        last = len(STEPS) - 1
+        if self._index == last - 1:      # Install button on summary
+            self._index = last
+            self._refresh()
+            self._start_install()
+            return
+        err = self._validate(self._index)
+        if err:
+            self._err.setText(err)
+            return
+        self._index += 1
+        self._refresh()
+
+    # ----- validation & answers -------------------------------------------
+    def _selected_kernels(self) -> list[str]:
+        return [pkg for pkg, cb in self.kernel_checks.items() if cb.isChecked()]
+
+    def _validate(self, page: int) -> str | None:
+        name = STEPS[page]
+        if name == 'Disk':
+            if not self.cmb_disk.currentData():
+                return 'Select a target disk.'
+            if self.chk_encrypt.isChecked():
+                if not self.enc_pw.text():
+                    return 'Enter an encryption passphrase.'
+                if self.enc_pw.text() != self.enc_pw2.text():
+                    return 'Encryption passphrases do not match.'
+        if name == 'System':
+            if not self._selected_kernels():
+                return 'Select at least one kernel.'
+        if name == 'Account':
+            if not re.fullmatch(r'[a-z][a-z0-9-]*', self.ed_host.text()):
+                return 'Invalid hostname (lowercase letters, digits, hyphen).'
+            if not re.fullmatch(r'[a-z_][a-z0-9_-]*', self.ed_user.text()):
+                return 'Invalid username (start with a letter; lowercase).'
+            if not self.ed_pw.text():
+                return 'Enter a password.'
+            if self.ed_pw.text() != self.ed_pw2.text():
+                return 'Passwords do not match.'
+        return None
+
+    def _answers(self) -> dict:
+        repos = []
+        if self.chk_multilib.isChecked():
+            repos.append('multilib')
+        if self.chk_testing.isChecked():
+            repos.append('testing')
+        return {
+            'device': self.cmb_disk.currentData(),
+            'encrypt': self.chk_encrypt.isChecked(),
+            'encryption_password': self.enc_pw.text(),
+            'hostname': self.ed_host.text(),
+            'username': self.ed_user.text(),
+            'user_password': self.ed_pw.text(),
+            'root_password': self.ed_root.text(),
+            'secure_boot': self.chk_sb.isChecked(),
+            'swap': self.chk_swap.isChecked(),
+            'ntp': self.chk_ntp.isChecked(),
+            'kernels': self._selected_kernels(),
+            'gfx_driver': self.cmb_gpu.currentData(),
+            'optional_repos': repos,
+            'kb_layout': self.cmb_kb.currentText(),
+            'sys_lang': self.cmb_lang.currentData(),
+            'timezone': self.cmb_tz.currentText(),
+        }
+
+    def _summary_html(self) -> str:
+        a = self._answers()
+        enc = 'Yes (LUKS)' if a['encrypt'] else 'No'
+        root = 'Set' if a['root_password'] else 'Disabled'
+        repos = ', '.join(a['optional_repos']) or 'none'
+        rows = [
+            ('Language', self.cmb_lang.currentText()),
+            ('Keyboard', a['kb_layout']),
+            ('Timezone', f"{a['timezone']}  (NTP {'on' if a['ntp'] else 'off'})"),
+            ('Extra repos', repos),
+            ('Disk (will be erased)', a['device'] or '—'),
+            ('Encryption', enc),
+            ('Kernels', ', '.join(a['kernels'])),
+            ('Graphics driver', self.cmb_gpu.currentText()),
+            ('zram swap', 'Enabled' if a['swap'] else 'Disabled'),
+            ('Secure Boot', 'Enabled' if a['secure_boot'] else 'Disabled'),
+            ('Hostname', a['hostname']),
+            ('Username', a['username']),
+            ('Root account', root),
+            ('Desktop', 'KDE Plasma (Maze)'),
+        ]
+        body = ''.join(
+            f'<tr><td style="color:rgba(255,255,255,0.55);padding:6px 18px 6px 0;">{k}</td>'
+            f'<td style="color:#ffffff;">{v}</td></tr>'
+            for k, v in rows
+        )
+        return (
+            f'<div style="color:#ffffff;font-weight:600;margin-bottom:14px;">⚠ {a["device"]} will be '
+            f'completely erased.</div><table>{body}</table>'
+        )
+
+    # ----- install driver --------------------------------------------------
+    def _append(self, text: str) -> None:
+        self._log.appendPlainText(text.rstrip('\n'))
+
+    def _start_install(self) -> None:
+        self._installing = True
+        self._bar.setVisible(True)
+        self._back.setVisible(False)
+        self._next.setVisible(False)
+
+        workdir = Path(tempfile.mkdtemp(prefix='maze-gui-'))
+        self._answers_file = workdir / 'answers.json'
+        self._answers_file.write_text(json.dumps(self._answers()))
+        os.chmod(self._answers_file, 0o600)
+
+        self._append(':: Preparing installation configuration...')
+        self._run(
+            ['sudo', 'maze-installer-config', 'gen', str(self._answers_file),
+             '/etc/maze-installer/maze.json', '/etc/maze-installer/creds.json'],
+            self._on_config_done,
+        )
+
+    def _run(self, argv: list[str], on_finish) -> None:
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.MergedChannels)
+        proc.readyReadStandardOutput.connect(
+            lambda: self._append(bytes(proc.readAllStandardOutput()).decode('utf-8', 'replace'))
+        )
+        proc.finished.connect(lambda code, _st: on_finish(code))
+        self._proc = proc
+        proc.start(argv[0], argv[1:])
+
+    def _on_config_done(self, code: int) -> None:
+        if code != 0:
+            self._fail('Failed to prepare the configuration.')
+            return
+        self._append(':: Configuration ready. Starting the installer engine...\n')
+        # maze-install auto-picks up /etc/maze-installer/{maze,creds}.json; --silent
+        # makes it run unattended with that config.
+        self._run(['sudo', 'maze-install', '--silent'], self._on_install_done)
+
+    def _on_install_done(self, code: int) -> None:
+        self._installing = False
+        self._bar.setRange(0, 1)
+        self._bar.setValue(1)
+        if code == 0:
+            self._append('\n:: Installation complete. You can reboot now.')
+            self._next.setText('Reboot')
+            self._next.setVisible(True)
+            self._next.clicked.disconnect()
+            self._next.clicked.connect(self._reboot)
+        else:
+            self._fail('Installation failed — see the log above '
+                       '(full details in /var/log/archinstall/install.log).')
+
+    def _fail(self, msg: str) -> None:
+        self._installing = False
+        self._bar.setRange(0, 1)
+        self._bar.setValue(0)
+        self._append(f'\n:: ERROR: {msg}')
+        self._err.setText(msg)
+        self._back.setVisible(True)
+        self._back.setText('Back')
+        try:
+            self._next.clicked.disconnect()
+        except RuntimeError:
+            pass
+        self._next.setText('Retry')
+        self._next.setVisible(True)
+        self._next.clicked.connect(self._retry)
+
+    def _retry(self) -> None:
+        self._index = len(STEPS) - 2  # back to summary
+        self._next.clicked.disconnect()
+        self._next.clicked.connect(self._go_next)
+        self._refresh()
+
+    def _reboot(self) -> None:
+        subprocess.Popen(['sudo', 'systemctl', 'reboot'])
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setApplicationName('Maze Installer')
+    # Tie this process to the maze-install.desktop launcher so KDE's Task Manager
+    # groups the running window under the SAME dock icon that started it (Wayland
+    # app_id / X11 WM_CLASS), instead of spawning a separate "Maze Installer"
+    # entry. Must match the .desktop basename.
+    app.setDesktopFileName(DESKTOP_FILE)
+    if os.path.exists(ICON_PATH):
+        app.setWindowIcon(QIcon(ICON_PATH))
+    QFont().setStyleStrategy(QFont.PreferAntialias)
+    win = Installer()
+    win.show()
+    return app.exec()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

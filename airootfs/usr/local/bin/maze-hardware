@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""maze-hardware — Maze Linux hardware privacy controller.
+
+One window with kernel/hardware-level kill switches for the camera, microphone,
+Bluetooth, Wi-Fi and USB. Reads/flips state with the unprivileged maze-killswitch,
+which forwards to the maze-guardd broker over its wheel-only socket — no pkexec /
+setuid in the path.
+"""
+import subprocess
+import sys
+
+try:
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import (
+        QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    )
+except Exception as exc:  # pragma: no cover
+    sys.stderr.write(f"maze-hardware: PySide6 unavailable: {exc}\n")
+    sys.exit(1)
+
+KILL = "/usr/local/bin/maze-killswitch"
+ACCENT = "#e0443e"
+DEVICES = [
+    ("camera",     "Webcam",     "Unloads the uvcvideo kernel module"),
+    ("microphone", "Microphone", "Mutes every audio capture input"),
+    ("bluetooth",  "Bluetooth",  "rfkill block (persists across reboot)"),
+    ("wifi",       "Wi-Fi",      "rfkill block (persists across reboot)"),
+    ("usb",        "USB ports",  "USBGuard blocks NEW devices (current ones keep working)"),
+]
+
+
+def read_status() -> dict:
+    # The broker returns ONE line: "OK camera=off microphone=on bluetooth=on ...".
+    out = {}
+    try:
+        res = subprocess.run([KILL, "status"], capture_output=True, text=True, timeout=10)
+        text = (res.stdout or "").strip()
+        if text.startswith("OK"):
+            text = text[2:].strip()
+        for tok in text.split():
+            if "=" in tok:
+                k, v = tok.split("=", 1)
+                out[k] = v   # "on" | "off" | "none"
+    except Exception:
+        pass
+    return out
+
+
+class Row(QFrame):
+    def __init__(self, dev, title, desc, parent):
+        super().__init__()
+        self._dev = dev
+        self._parent = parent
+        self.setObjectName("row")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(16, 12, 16, 12)
+        text = QVBoxLayout()
+        t = QLabel(title); t.setObjectName("title")
+        d = QLabel(desc);  d.setObjectName("desc")
+        text.addWidget(t); text.addWidget(d)
+        lay.addLayout(text, 1)
+        self.btn = QPushButton("…")
+        self.btn.setObjectName("toggle")
+        self.btn.setFixedWidth(110)
+        self.btn.clicked.connect(self._toggle)
+        lay.addWidget(self.btn)
+
+    def set_state(self, state: str):
+        # state is "on" | "off" | "none" (device not present, e.g. a VM has no Wi-Fi)
+        self._state = state
+        if state == "none":
+            self.btn.setText("N/A")
+            self.btn.setEnabled(False)
+            self.btn.setToolTip("No such device on this machine")
+            self.btn.setProperty("on", "none")
+        else:
+            self._on = (state == "on")
+            self.btn.setEnabled(True)
+            self.btn.setToolTip("")
+            self.btn.setText("On" if self._on else "Off")
+            self.btn.setProperty("on", "yes" if self._on else "no")
+        self.btn.style().unpolish(self.btn); self.btn.style().polish(self.btn)
+
+    def _toggle(self):
+        if getattr(self, "_state", "") == "none":
+            return
+        action = "off" if getattr(self, "_on", True) else "on"
+        try:
+            # maze-killswitch is unprivileged: it forwards to the maze-guardd
+            # broker over its wheel-only socket. No pkexec / setuid in the path.
+            subprocess.run([KILL, self._dev, action], timeout=60)
+        except Exception:
+            pass
+        self._parent.refresh()
+
+
+class Hardware(QWidget):
+    KEYMAP = {"camera": "camera", "microphone": "microphone",
+              "bluetooth": "bluetooth", "wifi": "wifi", "usb": "usb"}
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Maze Hardware")
+        self.resize(520, 460)
+        self.setStyleSheet(f"""
+            QWidget {{ background:#0a0a0c; color:#f2f2f7;
+                       font-family:'Segoe UI','Noto Sans',sans-serif; }}
+            QLabel#h1 {{ font-size:20px; font-weight:700; }}
+            QLabel#sub {{ color:#9a9aa6; font-size:12px; }}
+            QFrame#row {{ background:#101015; border-radius:12px; }}
+            QLabel#title {{ font-size:15px; font-weight:600; }}
+            QLabel#desc {{ color:#8a8a94; font-size:11px; }}
+            QPushButton#toggle {{ border:none; border-radius:9px; padding:9px;
+                                  font-weight:700; background:#2a2a30; color:#fff; }}
+            QPushButton#toggle[on="yes"] {{ background:#2f7d32; color:#fff; }}
+            QPushButton#toggle[on="no"]  {{ background:{ACCENT}; color:#fff; }}
+            QPushButton#toggle[on="none"] {{ background:#222226; color:#5a5a62; }}
+            QPushButton#toggle:disabled {{ background:#222226; color:#5a5a62; }}
+        """)
+        col = QVBoxLayout(self)
+        col.setContentsMargins(20, 18, 20, 18)
+        col.setSpacing(10)
+        h = QLabel("Hardware privacy controller"); h.setObjectName("h1")
+        s = QLabel("Cut power-hungry sensors and radios at the kernel level — no physical switch needed.")
+        s.setObjectName("sub"); s.setWordWrap(True)
+        col.addWidget(h); col.addWidget(s); col.addSpacing(6)
+        self._rows = {}
+        for dev, title, desc in DEVICES:
+            r = Row(dev, title, desc, self)
+            self._rows[dev] = r
+            col.addWidget(r)
+        col.addStretch(1)
+        self.refresh()
+
+    def refresh(self):
+        st = read_status()
+        for dev, row in self._rows.items():
+            row.set_state(st.get(self.KEYMAP[dev], "on"))
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Maze Hardware")
+    app.setDesktopFileName("maze-hardware")
+    app.setWindowIcon(QIcon("/usr/share/pixmaps/maze-hardware.svg"))
+    w = Hardware()
+    w.setWindowIcon(QIcon("/usr/share/pixmaps/maze-hardware.svg"))
+    w.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

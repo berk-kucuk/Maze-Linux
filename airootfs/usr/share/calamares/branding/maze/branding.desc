@@ -1,0 +1,53 @@
+# Maze Linux — Calamares branding (OLED theme, white accent).
+---
+componentName: maze
+
+welcomeStyleCalamares: true
+# false = show the welcome logo at its NATURAL aspect ratio (true expands it to
+# fill, which stretched/squished the wide Maze logo).
+welcomeExpandingLogo: false
+
+windowExpanding: normal
+windowSize: 980px,640px
+windowPlacement: center
+
+# 'widget' is the traditional sidebar (logo + step list) and DOES use the 'style'
+# colours below. ('none' would hide it entirely — do NOT use that.)
+sidebar: widget
+navigation: widget
+
+strings:
+    productName:         Maze Linux
+    shortProductName:    Maze
+    version:             2026
+    shortVersion:        2026
+    versionedName:       Maze Linux
+    shortVersionedName:  Maze
+    bootloaderEntryName: Maze
+    productUrl:          https://mazelinux.berkkucukk.com.tr
+    supportUrl:          https://mazelinux.berkkucukk.com.tr
+    knownIssuesUrl:      https://mazelinux.berkkucukk.com.tr
+    releaseNotesUrl:     https://mazelinux.berkkucukk.com.tr
+
+images:
+    # Sidebar (top-left) logo = the SQUARE no-text Maze block. The wide "MAZE
+    # LINUX" wordmark gets horizontally squashed in the narrow sidebar slot, so
+    # use the square block there; the full wordmark stays on the welcome page.
+    productLogo:    "maze-simple-logo.png"
+    # Window/taskbar icon = the same square block (a wide logo squashes here too).
+    productIcon:    "maze-simple-logo.png"
+    productWelcome: "maze-logo.png"
+
+# Simple OLED slideshow (single QML); replace with a richer slideshow later.
+slideshow:     "show.qml"
+slideshowAPI:  2
+
+# Sidebar colours. NOTE: these keys are PascalCase — Calamares IGNORES camelCase
+# (sidebarText...) which is why the step labels were dark-on-black before. The
+# four valid keys are exactly: SidebarBackground, SidebarText, SidebarTextCurrent,
+# SidebarBackgroundCurrent.
+style:
+    SidebarBackground:        "#070707"
+    SidebarText:              "#a8a8a8"
+    SidebarTextCurrent:       "#ffffff"
+    SidebarBackgroundCurrent: "#1c1c1c"

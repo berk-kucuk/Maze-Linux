@@ -1,0 +1,293 @@
+from dataclasses import dataclass
+from enum import StrEnum, auto
+from typing import Any, NotRequired, Self, TypedDict, override
+
+from archinstall.lib.models.config import SubConfig
+from archinstall.lib.translationhandler import tr
+
+
+class PowerManagement(StrEnum):
+	POWER_PROFILES_DAEMON = 'power-profiles-daemon'
+	TUNED = auto()
+
+
+class PowerManagementConfigSerialization(TypedDict):
+	power_management: str
+
+
+class BluetoothConfigSerialization(TypedDict):
+	enabled: bool
+
+
+class Audio(StrEnum):
+	NO_AUDIO = 'No audio server'
+	PIPEWIRE = auto()
+	PULSEAUDIO = auto()
+
+
+class AudioConfigSerialization(TypedDict):
+	audio: str
+
+
+class PrintServiceConfigSerialization(TypedDict):
+	enabled: bool
+
+
+class Firewall(StrEnum):
+	UFW = auto()
+	FWD = 'firewalld'
+
+
+class FirewallConfigSerialization(TypedDict):
+	firewall: str
+
+
+class FontPackage(StrEnum):
+	NOTO = 'noto-fonts'
+	EMOJI = 'noto-fonts-emoji'
+	CJK = 'noto-fonts-cjk'
+	LIBERATION = 'ttf-liberation'
+	DEJAVU = 'ttf-dejavu'
+
+	def description(self) -> str:
+		match self:
+			case FontPackage.NOTO:
+				return tr('Unicode font coverage for most languages')
+			case FontPackage.EMOJI:
+				return tr('color emoji for browsers and apps')
+			case FontPackage.CJK:
+				return tr('Chinese, Japanese, Korean characters')
+			case FontPackage.LIBERATION:
+				return tr('Arial/Times/Courier replacement, Cyrillic support for Steam/games')
+			case FontPackage.DEJAVU:
+				return tr('wide Unicode coverage, good fallback font')
+
+
+class FontsConfigSerialization(TypedDict):
+	fonts: list[str]
+
+
+class ZramAlgorithm(StrEnum):
+	ZSTD = auto()
+	LZO_RLE = 'lzo-rle'
+	LZO = auto()
+	LZ4 = auto()
+	LZ4HC = auto()
+
+
+class ApplicationSerialization(TypedDict):
+	bluetooth_config: NotRequired[BluetoothConfigSerialization]
+	audio_config: NotRequired[AudioConfigSerialization]
+	power_management_config: NotRequired[PowerManagementConfigSerialization]
+	print_service_config: NotRequired[PrintServiceConfigSerialization]
+	firewall_config: NotRequired[FirewallConfigSerialization]
+	fonts_config: NotRequired[FontsConfigSerialization]
+
+
+@dataclass
+class AudioConfiguration:
+	audio: Audio
+
+	def json(self) -> AudioConfigSerialization:
+		return {
+			'audio': self.audio.value,
+		}
+
+	@classmethod
+	def parse_arg(cls, arg: dict[str, Any]) -> Self:
+		return cls(
+			Audio(arg['audio']),
+		)
+
+
+@dataclass
+class BluetoothConfiguration:
+	enabled: bool
+
+	def json(self) -> BluetoothConfigSerialization:
+		return {'enabled': self.enabled}
+
+	@classmethod
+	def parse_arg(cls, arg: BluetoothConfigSerialization) -> Self:
+		return cls(arg['enabled'])
+
+
+@dataclass
+class PowerManagementConfiguration:
+	power_management: PowerManagement
+
+	def json(self) -> PowerManagementConfigSerialization:
+		return {
+			'power_management': self.power_management.value,
+		}
+
+	@classmethod
+	def parse_arg(cls, arg: PowerManagementConfigSerialization) -> Self:
+		return cls(
+			PowerManagement(arg['power_management']),
+		)
+
+
+@dataclass
+class PrintServiceConfiguration:
+	enabled: bool
+
+	def json(self) -> PrintServiceConfigSerialization:
+		return {'enabled': self.enabled}
+
+	@classmethod
+	def parse_arg(cls, arg: PrintServiceConfigSerialization) -> Self:
+		return cls(arg['enabled'])
+
+
+@dataclass
+class FirewallConfiguration:
+	firewall: Firewall
+
+	def json(self) -> FirewallConfigSerialization:
+		return {
+			'firewall': self.firewall.value,
+		}
+
+	@classmethod
+	def parse_arg(cls, arg: dict[str, Any]) -> Self:
+		return cls(
+			Firewall(arg['firewall']),
+		)
+
+
+@dataclass
+class FontsConfiguration:
+	fonts: list[FontPackage]
+
+	def json(self) -> FontsConfigSerialization:
+		return {'fonts': [f.value for f in self.fonts]}
+
+	@classmethod
+	def parse_arg(cls, arg: FontsConfigSerialization) -> Self:
+		return cls(fonts=[FontPackage(f) for f in arg['fonts']])
+
+
+@dataclass(frozen=True)
+class ZramConfiguration(SubConfig):
+	enabled: bool
+	algorithm: ZramAlgorithm = ZramAlgorithm.ZSTD
+
+	@classmethod
+	def parse_arg(cls, arg: bool | dict[str, Any]) -> Self:
+		if isinstance(arg, bool):
+			return cls(enabled=arg)
+
+		enabled = arg.get('enabled', True)
+		algo = arg.get('algorithm', arg.get('algo', ZramAlgorithm.ZSTD.value))
+		return cls(enabled=enabled, algorithm=ZramAlgorithm(algo))
+
+	@override
+	def json(self) -> dict[str, bool | str]:
+		return {
+			'enabled': self.enabled,
+			'algorithm': self.algorithm.value,
+		}
+
+	@override
+	def summary(self) -> list[str] | None:
+		out: list[str] = []
+
+		if self.enabled:
+			out.append(tr('Zram enabled'))
+
+			out.append(tr('Zram algorithm {}').format(self.algorithm))
+			return out
+
+		return None
+
+
+@dataclass
+class ApplicationConfiguration(SubConfig):
+	bluetooth_config: BluetoothConfiguration | None = None
+	audio_config: AudioConfiguration | None = None
+	power_management_config: PowerManagementConfiguration | None = None
+	print_service_config: PrintServiceConfiguration | None = None
+	firewall_config: FirewallConfiguration | None = None
+	fonts_config: FontsConfiguration | None = None
+
+	@classmethod
+	def parse_arg(
+		cls,
+		args: dict[str, Any] | None = None,
+		old_audio_config: dict[str, Any] | None = None,
+	) -> Self:
+		app_config = cls()
+
+		if args and (bluetooth_config := args.get('bluetooth_config')) is not None:
+			app_config.bluetooth_config = BluetoothConfiguration.parse_arg(bluetooth_config)
+
+		# deprecated: backwards compatibility
+		if old_audio_config is not None:
+			app_config.audio_config = AudioConfiguration.parse_arg(old_audio_config)
+
+		if args and (audio_config := args.get('audio_config')) is not None:
+			app_config.audio_config = AudioConfiguration.parse_arg(audio_config)
+
+		if args and (power_management_config := args.get('power_management_config')) is not None:
+			app_config.power_management_config = PowerManagementConfiguration.parse_arg(power_management_config)
+
+		if args and (print_service_config := args.get('print_service_config')) is not None:
+			app_config.print_service_config = PrintServiceConfiguration.parse_arg(print_service_config)
+
+		if args and (firewall_config := args.get('firewall_config')) is not None:
+			app_config.firewall_config = FirewallConfiguration.parse_arg(firewall_config)
+
+		if args and (fonts_config := args.get('fonts_config')) is not None:
+			app_config.fonts_config = FontsConfiguration.parse_arg(fonts_config)
+
+		return app_config
+
+	@override
+	def json(self) -> ApplicationSerialization:
+		config: ApplicationSerialization = {}
+
+		if self.bluetooth_config:
+			config['bluetooth_config'] = self.bluetooth_config.json()
+
+		if self.audio_config:
+			config['audio_config'] = self.audio_config.json()
+
+		if self.power_management_config:
+			config['power_management_config'] = self.power_management_config.json()
+
+		if self.print_service_config:
+			config['print_service_config'] = self.print_service_config.json()
+
+		if self.firewall_config:
+			config['firewall_config'] = self.firewall_config.json()
+
+		if self.fonts_config:
+			config['fonts_config'] = self.fonts_config.json()
+
+		return config
+
+	@override
+	def summary(self) -> list[str]:
+		out: list[str] = []
+
+		if self.bluetooth_config and self.bluetooth_config.enabled:
+			out.append(tr('Bluetooth enabled'))
+
+		if self.audio_config:
+			out.append(tr('Audio server "{}"').format(self.audio_config.audio))
+
+		if self.power_management_config:
+			out.append(tr('Power management "{}"').format(self.power_management_config.power_management))
+
+		if self.print_service_config and self.print_service_config.enabled:
+			out.append(tr('Print service enabled'))
+
+		if self.firewall_config:
+			out.append(tr('Firewall "{}"').format(self.firewall_config.firewall))
+
+		if self.fonts_config and self.fonts_config.fonts:
+			fonts = ', '.join(f.value for f in self.fonts_config.fonts)
+			out.append(tr('Extra fonts "{}"').format(fonts))
+
+		return out

@@ -1,0 +1,50 @@
+# Maze Linux — default zsh configuration (oh-my-zsh)
+
+export ZSH="$HOME/.oh-my-zsh"
+
+ZSH_THEME="maze"
+
+plugins=(
+    git
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+    web-search
+    copypath
+    copybuffer
+    dirhistory
+    history
+    sudo
+    colored-man-pages
+)
+
+# grml-zsh-config ships a GLOBAL /etc/zsh/zshrc (sourced before this file) that
+# runs `prompt grml`, installing a precmd hook (prompt_grml_precmd) which REBUILDS
+# the prompt on every redraw — overriding oh-my-zsh's theme and dropping the Maze
+# prompt + the [HH:MM:SS] clock (you'd just see grml's `user@host dir %`). Tear
+# grml's prompt down here so the oh-my-zsh theme loaded below actually sticks.
+autoload -Uz add-zsh-hook promptinit
+prompt off 2>/dev/null
+for _grml_pc in prompt_grml_precmd prompt_grml-chroot_precmd prompt_grml-large_precmd; do
+    add-zsh-hook -d precmd "$_grml_pc" 2>/dev/null
+done
+unset _grml_pc
+
+source $ZSH/oh-my-zsh.sh
+
+# User configuration
+
+export PATH="$HOME/.local/bin:$PATH"
+
+# Greeting with Maze Linux branding
+if command -v fastfetch >/dev/null 2>&1; then
+    fastfetch \
+        --logo-type file \
+        --logo /usr/share/maze/fastfetch-logo.txt \
+        --logo-color-1 "38;2;255;255;255" \
+        --logo-color-2 "38;2;255;255;255" \
+        --color-keys "38;2;255;255;255" \
+        --color-title "38;2;255;255;255" \
+        --separator " → " \
+        --key-width 25 \
+        --structure "Title:OS:Host:Kernel:Uptime:Packages:Shell:Terminal:Display:DE:WM:CPU:GPU:Memory:Swap:Disk:LocalIp"
+fi

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Maze Wallpaper
+Comment=Apply the Maze active-blur wallpaper on first login
+Exec=/usr/local/bin/maze-apply-wallpaper
+Icon=preferences-desktop-wallpaper
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=plasmashell

@@ -1,0 +1,13 @@
+/* Maze Linux LIVE medium only: let the (wheel) live user run pkexec without a
+ * password so the Calamares launcher elevates silently.
+ *
+ * SECURITY: this is for the ephemeral live session ONLY. deploy-to-target.sh
+ * MUST remove this file from the installed target (it would otherwise make
+ * pkexec passwordless on real systems). See CALAMARES.md "live-only cleanup".
+ */
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.policykit.exec" &&
+        subject.local && subject.active && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

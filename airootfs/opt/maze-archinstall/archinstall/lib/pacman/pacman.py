@@ -1,0 +1,113 @@
+import sys
+import time
+from collections.abc import Callable
+from pathlib import Path
+
+from archinstall.lib.command import SysCommand
+from archinstall.lib.exceptions import RequirementError, SysCallError
+from archinstall.lib.log import debug, error, info, warn
+from archinstall.lib.pathnames import PACMAN_CONF
+from archinstall.lib.plugins import plugins
+from archinstall.lib.translationhandler import tr
+
+
+class Pacman:
+	def __init__(self, target: Path, silent: bool = False):
+		self.synced = False
+		self.silent = silent
+		self.target = target
+
+	@staticmethod
+	def run(args: str, default_cmd: str = 'pacman') -> SysCommand:
+		"""
+		A centralized function to call `pacman` from.
+		It also protects us from colliding with other running pacman sessions (if used locally).
+		The grace period is set to 10 minutes before exiting hard if another pacman instance is running.
+		"""
+		pacman_db_lock = Path('/var/lib/pacman/db.lck')
+
+		if pacman_db_lock.exists():
+			warn(tr('Pacman is already running, waiting maximum 10 minutes for it to terminate.'))
+
+		started = time.monotonic()
+		while pacman_db_lock.exists():
+			time.sleep(0.25)
+
+			if time.monotonic() - started > (60 * 10):
+				error(tr('Pre-existing pacman lock never exited. Please clean up any existing pacman sessions before using archinstall.'))
+				sys.exit(1)
+
+		return SysCommand(f'{default_cmd} {args}')
+
+	def ask(self, error_message: str, bail_message: str, func: Callable, *args, **kwargs) -> None:  # type: ignore[no-untyped-def, type-arg]
+		while True:
+			try:
+				func(*args, **kwargs)
+				break
+			except Exception as err:
+				error(f'{error_message}: {err}')
+				if not self.silent and input('Would you like to re-try this download? (Y/n): ').lower().strip() in 'y':
+					continue
+				raise RequirementError(f'{bail_message}: {err}')
+
+	def sync(self) -> None:
+		if self.synced:
+			return
+
+		try:
+			self.run('-Syy')
+		except SysCallError as err:
+			if b'GPGME' in err.worker_log or b'keyring' in err.worker_log.lower():
+				warn('Pacman sync failed with keyring error, attempting keyring reinit')
+				self._reinit_keyring()
+				msg = 'Could not sync a new package database after keyring reinit'
+			else:
+				msg = 'Could not sync a new package database'
+
+			self.ask(msg, 'Could not sync mirrors', self.run, '-Syy')
+
+		self.synced = True
+
+	@staticmethod
+	def _is_running(process: str) -> bool:
+		try:
+			SysCommand(f'pgrep -x {process}')
+			return True
+		except SysCallError:
+			debug(f'{process} is not running')
+			return False
+
+	@staticmethod
+	def _reinit_keyring() -> None:
+		if Pacman._is_running('gpg-agent'):
+			try:
+				SysCommand('killall gpg-agent')
+			except SysCallError as err:
+				debug(f'Failed to kill gpg-agent: {err}')
+
+		try:
+			SysCommand('pacman-key --init')
+			SysCommand('pacman-key --populate archlinux')
+			debug('Keyring reinitialized successfully')
+		except SysCallError as err:
+			debug(f'Keyring reinit failed: {err}')
+
+	def strap(self, packages: str | list[str]) -> None:
+		self.sync()
+		if isinstance(packages, str):
+			packages = [packages]
+
+		for plugin in plugins.values():
+			if hasattr(plugin, 'on_pacstrap'):
+				if result := plugin.on_pacstrap(packages):
+					packages = result
+
+		info(f'Installing packages: {packages}')
+
+		self.ask(
+			'Could not strap in packages',
+			'Pacstrap failed. See /var/log/archinstall/install.log or above message for error details',
+			SysCommand,
+			f'pacstrap -C {PACMAN_CONF} -K {self.target} {" ".join(packages)} --noconfirm --needed',
+			peek_output=True,
+		)

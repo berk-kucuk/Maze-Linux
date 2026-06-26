@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""maze-installer-config — headless config generator for the Maze GUI installer.
+
+The Qt GUI (maze-installer-gui) collects the user's choices and hands them to
+this helper as a small JSON "answers" file. We turn those answers into a full
+archinstall configuration (the *same* objects the interactive TUI builds) and
+write the two files that `maze-install --silent` consumes:
+
+    /etc/maze-installer/maze.json    (archinstall --config)
+    /etc/maze-installer/creds.json   (archinstall --creds, contains passwords)
+
+ALL archinstall coupling lives here — the GUI never imports archinstall, so the
+UI stays simple and testable while this single module owns the install engine's
+data model. Run as root (it enumerates block devices).
+
+Usage:
+    maze-installer-config gen <answers.json> <out_config.json> <out_creds.json>
+
+Disk strategy: automatic single-disk wipe using archinstall's own default
+layout (1 GiB FAT32 ESP at /boot + a BTRFS root with the standard
+@/@home/@log/@pkg subvolumes), optionally LUKS-encrypted. The partition maths
+and subvolume set are taken verbatim from archinstall so they always match what
+the tested TUI default produces.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+# Make the Maze archinstall *fork* importable without relying on PYTHONPATH
+# (this helper is invoked via sudo, which scrubs the environment). This mirrors
+# what maze-install does with PYTHONPATH for the TUI.
+sys.path.insert(0, '/opt/maze-archinstall')
+
+
+def _die(msg: str) -> None:
+    print(f'maze-installer-config: error: {msg}', file=sys.stderr)
+    raise SystemExit(2)
+
+
+def build_config(answers: dict):
+    """Build an archinstall ArchConfig from the GUI's answers dict."""
+    # Imported here (not at module top) so `--help`/arg errors don't pay the
+    # cost of loading archinstall and enumerating disks.
+    from archinstall.lib.args import ArchConfig
+    from archinstall.lib.configuration import ConfigurationOutput
+    from archinstall.lib.disk.device_handler import device_handler
+    from archinstall.lib.hardware import GfxDriver
+    from archinstall.lib.models.application import ZramConfiguration
+    from archinstall.lib.models.authentication import AuthenticationConfiguration
+    from archinstall.lib.models.bootloader import BootloaderConfiguration
+    from archinstall.lib.models.device import (
+        DeviceModification,
+        DiskEncryption,
+        DiskLayoutConfiguration,
+        DiskLayoutType,
+        EncryptionType,
+        FilesystemType,
+        ModificationStatus,
+        PartitionFlag,
+        PartitionModification,
+        PartitionType,
+        SectorSize,
+        Size,
+        SubvolumeModification,
+        Unit,
+    )
+    from archinstall.lib.models.locale import LocaleConfiguration
+    from archinstall.lib.models.mirrors import MirrorConfiguration
+    from archinstall.lib.models.network import NetworkConfiguration, NicType
+    from archinstall.lib.models.packages import Repository
+    from archinstall.lib.models.profile import ProfileConfiguration
+    from archinstall.lib.models.users import Password, User
+    from archinstall.lib.profile.profiles_handler import profile_handler
+
+    # --- resolve the chosen block device ----------------------------------
+    device_path = answers.get('device')
+    if not device_path:
+        _die('no target device given')
+
+    bdevice = next(
+        (d for d in device_handler.devices if str(d.device_info.path) == device_path),
+        None,
+    )
+    if bdevice is None:
+        avail = ', '.join(str(d.device_info.path) for d in device_handler.devices) or '<none>'
+        _die(f'device {device_path!r} not found (available: {avail})')
+
+    # --- default single-disk layout (verbatim from archinstall defaults) --
+    sector_size: SectorSize = bdevice.device_info.sector_size
+    using_gpt = device_handler.partition_table.is_gpt()
+
+    available_space = bdevice.device_info.total_size
+    if using_gpt:
+        available_space = available_space.gpt_end()
+    available_space = available_space.align()
+
+    device_mod = DeviceModification(bdevice, wipe=True)
+
+    # 1 GiB FAT32 ESP at /boot (ESP flag on GPT) — same as archinstall's
+    # _boot_partition().
+    boot_flags = [PartitionFlag.BOOT]
+    if using_gpt:
+        boot_flags.append(PartitionFlag.ESP)
+    boot_partition = PartitionModification(
+        status=ModificationStatus.CREATE,
+        type=PartitionType.PRIMARY,
+        start=Size(1, Unit.MiB, sector_size),
+        length=Size(1, Unit.GiB, sector_size),
+        mountpoint=Path('/boot'),
+        fs_type=FilesystemType.FAT32,
+        flags=boot_flags,
+    )
+    device_mod.add_partition(boot_partition)
+
+    # BTRFS root filling the rest of the disk, mounted via subvolumes.
+    root_start = boot_partition.start + boot_partition.length
+    root_length = available_space - root_start
+    root_partition = PartitionModification(
+        status=ModificationStatus.CREATE,
+        type=PartitionType.PRIMARY,
+        start=root_start,
+        length=root_length,
+        mountpoint=None,  # mounted through subvolumes below
+        fs_type=FilesystemType.BTRFS,
+        mount_options=['compress=zstd'],
+    )
+    device_mod.add_partition(root_partition)
+    # Standard archinstall subvolume layout (get_default_btrfs_subvols()).
+    root_partition.btrfs_subvols = [
+        SubvolumeModification(Path('@'), Path('/')),
+        SubvolumeModification(Path('@home'), Path('/home')),
+        SubvolumeModification(Path('@log'), Path('/var/log')),
+        SubvolumeModification(Path('@pkg'), Path('/var/cache/pacman/pkg')),
+    ]
+
+    # Optional LUKS full-disk encryption on the root partition.
+    disk_encryption = None
+    if answers.get('encrypt'):
+        enc_pw = answers.get('encryption_password') or ''
+        if not enc_pw:
+            _die('encryption requested but no encryption_password provided')
+        disk_encryption = DiskEncryption(
+            encryption_type=EncryptionType.LUKS,
+            encryption_password=Password(plaintext=enc_pw),
+            partitions=[root_partition],
+        )
+
+    disk_config = DiskLayoutConfiguration(
+        config_type=DiskLayoutType.Default,
+        device_modifications=[device_mod],
+        disk_encryption=disk_encryption,
+    )
+
+    # --- the rest of the system config ------------------------------------
+    config = ArchConfig()
+    config.disk_config = disk_config
+
+    config.locale_config = LocaleConfiguration(
+        kb_layout=answers.get('kb_layout') or 'us',
+        sys_lang=answers.get('sys_lang') or 'en_US.UTF-8',
+        sys_enc='UTF-8',
+    )
+
+    # The fixed Maze desktop: the single "KDE Plasma" top-level profile + the
+    # chosen GPU driver + the profile's own default greeter. Mirrors
+    # GlobalMenu._default_profile_config() so the Maze post_install (which runs
+    # deploy-to-target.sh) fires exactly as it does from the TUI.
+    profile = profile_handler.get_top_level_profiles()[0]
+    gfx_value = answers.get('gfx_driver') or GfxDriver.AllOpenSource.value
+    config.profile_config = ProfileConfiguration(
+        profile=profile,
+        gfx_driver=GfxDriver(gfx_value),
+        greeter=profile.default_greeter_type,
+    )
+
+    # Network is fixed to NetworkManager (Maze default — the network menu is
+    # hidden in the TUI too).
+    config.network_config = NetworkConfiguration(NicType.NM)
+
+    # Optional repositories (e.g. multilib for Steam). Mirror regions are left to
+    # reflector/the live medium, matching the Maze defaults.
+    optional_repos = answers.get('optional_repos') or []
+    config.mirror_config = MirrorConfiguration(
+        optional_repositories=[Repository(r) for r in optional_repos],
+    )
+
+    config.bootloader_config = BootloaderConfiguration.parse_arg(
+        {
+            'bootloader': 'Systemd-boot',
+            'uki': True,
+            'removable': True,
+            'secure_boot': bool(answers.get('secure_boot', True)),
+        },
+        skip_boot=False,
+    )
+
+    # Compressed RAM swap (zram), on by default like the TUI's Swap menu.
+    config.swap = ZramConfiguration(enabled=bool(answers.get('swap', True)))
+
+    config.hostname = answers.get('hostname') or 'maze'
+    config.timezone = answers.get('timezone') or 'UTC'
+    config.kernels = answers.get('kernels') or ['linux']
+    config.ntp = bool(answers.get('ntp', True))
+
+    # Users + (optional) root password. Passwords are hashed (yescrypt) by the
+    # Password object; ConfigurationOutput writes them into the creds file.
+    username = answers.get('username') or 'maze'
+    user_pw = answers.get('user_password') or ''
+    if not user_pw:
+        _die('no user password provided')
+    users = [User(username=username, password=Password(plaintext=user_pw), sudo=True)]
+
+    root_pw = answers.get('root_password') or ''
+    config.auth_config = AuthenticationConfiguration(
+        root_enc_password=Password(plaintext=root_pw) if root_pw else None,
+        users=users,
+    )
+
+    return ConfigurationOutput(config)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 1 or argv[0] in ('-h', '--help'):
+        print(__doc__)
+        return 0
+
+    if argv[0] != 'gen' or len(argv) != 4:
+        _die('usage: maze-installer-config gen <answers.json> <out_config> <out_creds>')
+
+    _, answers_path, out_config, out_creds = argv
+
+    try:
+        answers = json.loads(Path(answers_path).read_text())
+    except Exception as exc:  # noqa: BLE001 — surface any read/parse error clearly
+        _die(f'could not read answers file {answers_path!r}: {exc}')
+
+    output = build_config(answers)
+
+    # Write the two files the installer engine reads. The config is harmless;
+    # the creds file holds passwords (live ISO is ephemeral / RAM-backed).
+    Path(out_config).write_text(output.user_config_to_json())
+    creds = Path(out_creds)
+    creds.write_text(output.user_credentials_to_json())
+    creds.chmod(0o600)
+
+    print(f'wrote {out_config} and {out_creds}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))

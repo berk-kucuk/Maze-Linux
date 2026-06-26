@@ -1,0 +1,20 @@
+#!/bin/sh
+# maze-panic-restore — undo the REVERSIBLE side-effects of Maze Panic mode.
+#
+# Panic cuts the network with rfkill (which systemd-rfkill keeps blocked even
+# after a reboot) and `nmcli networking off`. This brings both back, so the user
+# never has to touch a terminal. It does NOT restore wiped logs/history/clipboard
+# — those are gone on purpose; this only re-enables connectivity.
+set -u
+
+# Radios: rfkill unblock is privileged -> ask the maze-guardd broker (no pkexec).
+maze-guard restore >/dev/null 2>&1 || true
+# NetworkManager: re-enable from the user side.
+nmcli networking on >/dev/null 2>&1 || true
+
+notify-send -a "Maze Panic" -i security-high \
+    "Network restored" \
+    "Wi-Fi and mobile radios are back on. (Wiped logs and history stay cleared.)" \
+    2>/dev/null || true
+
+exit 0

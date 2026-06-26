@@ -1,0 +1,17 @@
+# remove from airootfs!
+# Create the Maze Linux live user after all packages are installed during the
+# ISO build. Runs before zzzz99-remove-custom-hooks (alphabetical order) and is
+# itself removed from the final image by that hook.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+
+[Action]
+Description = Creating the Maze Linux live user...
+When = PostTransaction
+Depends = shadow
+Depends = bash
+Exec = /usr/local/share/maze/setup-live-user.sh

@@ -1,0 +1,38 @@
+## Maze Linux — baseline auditd rules.
+## A moderate, low-noise set covering account, privilege, time, module and
+## network-config changes. Loaded by augenrules into the running auditd.
+
+# Start clean and set a reasonable backlog buffer.
+-D
+-b 8192
+-f 1
+
+## Account / identity changes
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/sudoers -p wa -k sudoers
+-w /etc/sudoers.d/ -p wa -k sudoers
+
+## Logins / sessions
+-w /var/log/lastlog -p wa -k logins
+
+## Time changes
+-a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
+-w /etc/localtime -p wa -k time-change
+
+## Kernel module load/unload
+-w /usr/bin/insmod -p x -k modules
+-w /usr/bin/rmmod -p x -k modules
+-w /usr/bin/modprobe -p x -k modules
+-a always,exit -F arch=b64 -S init_module,delete_module -k modules
+
+## Privilege escalation
+-w /usr/bin/su -p x -k priv_esc
+-w /usr/bin/sudo -p x -k priv_esc
+
+## Network configuration
+-w /etc/hosts -p wa -k network
+-w /etc/hostname -p wa -k network
+-w /etc/NetworkManager/ -p wa -k network

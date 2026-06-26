@@ -1,0 +1,687 @@
+#!/usr/bin/env python3
+"""
+maze-welcome — Maze Linux first-boot welcome app.
+
+A frameless, true-black (OLED) frosted-glass welcome window that greets the user
+on the first desktop login after installation. It is organised as a sidebar of
+tabs — Welcome, Security, Privacy, AI and System — and its job is to *inform*:
+it explains what Maze offers and shows the live state of the system (which
+security services are running, MAC randomisation, installed AI models, hardware)
+without launching other applications. The only outbound action is the "Website"
+button.
+
+Shared OLED widgets/palette come from maze_ui; live system state from
+maze_status (both under /usr/local/lib/maze, also used by maze-control-center).
+
+First-boot only: the autostart entry is dropped into the user's home by the
+installer (deploy step); this app deletes that entry the first time it runs, so
+it never opens again on later boots. Running `maze-welcome` manually always works.
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+# Run under XWayland/X11 so KWin's blur-behind hint applies. Must be set before
+# QApplication is created.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+
+# Shared Maze libraries.
+sys.path.insert(0, "/usr/local/lib/maze")
+import maze_ui as ui  # noqa: E402
+from maze_i18n import set_language, tr  # noqa: E402
+from maze_ui import (  # noqa: E402  re-export shared names for local f-strings
+    ACCENT,
+    ACCENT_HOVER,
+    DIM,
+    FAINT,
+    LOGO_PATH,
+    OK_GREEN,
+    PANEL_BLACK,
+    PILL_BG,
+    TEXT,
+    Glass,
+    NavButton,
+    enable_kde_blur,
+    heading,
+    make_watermark,
+    paragraph,
+    status_row,
+)
+
+try:
+    import maze_status
+except Exception:  # noqa: BLE001
+    maze_status = None
+
+from PySide6.QtCore import (  # noqa: E402
+    QEasingCurve,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    QUrl,
+)
+from PySide6.QtGui import (  # noqa: E402
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QPainter,
+    QPixmap,
+)
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+WEBSITE_URL = "https://mazelinux.berkkucukk.com.tr"
+AUTOSTART_FILE = Path.home() / ".config/autostart/maze-welcome.desktop"
+WIN_W, WIN_H = 980, 660
+
+# Card backgrounds are local to Welcome (the Card widget is not shared).
+CARD_GLASS = "rgba(255, 255, 255, 0.045)"
+CARD_GLASS_HOVER = "rgba(255, 255, 255, 0.11)"
+
+TIPS = [
+    "Tip: OpenSnitch asks before any app connects to the internet — review the prompts.",
+    "Tip: Your MAC address is randomised on every network for privacy.",
+    "Tip: Run local AI models fully offline with `ollama run <model>`.",
+    "Tip: Maze is a rolling release — update regularly to stay secure.",
+    "Tip: Find thousands more apps in Discover, no terminal required.",
+    "Tip: Press Esc to close this window.",
+]
+
+
+def disable_autostart() -> None:
+    try:
+        AUTOSTART_FILE.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def system_facts() -> list[tuple[str, str]]:
+    if maze_status is not None:
+        try:
+            return maze_status.system_facts()
+        except Exception:  # noqa: BLE001
+            pass
+    return [("computer", "maze")]
+
+
+def system_summary() -> str:
+    if maze_status is not None:
+        try:
+            return maze_status.system_summary()
+        except Exception:  # noqa: BLE001
+            pass
+    return "Maze Linux"
+
+
+class Card(QFrame):
+    def __init__(self, icon: str, title: str, desc: str, on_click) -> None:
+        super().__init__()
+        self._on_click = on_click
+        self.setCursor(Qt.PointingHandCursor)
+        self.setObjectName("card")
+        self.setStyleSheet(
+            f"""
+            QFrame#card {{ background: {CARD_GLASS}; border-radius: 14px;
+                           border: 1px solid rgba(255,255,255,0.10); }}
+            QFrame#card:hover {{ background: {CARD_GLASS_HOVER};
+                                 border: 1px solid {ACCENT}; }}
+            """
+        )
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 13, 16, 13)
+        lay.setSpacing(5)
+
+        ic = ui.icon_label(icon, 24)
+        tt = QLabel(title)
+        tt.setStyleSheet(f"color: {TEXT}; background: transparent;")
+        tt.setFont(QFont("Sans Serif", 11, QFont.Bold))
+        ds = QLabel(desc)
+        ds.setWordWrap(True)
+        ds.setStyleSheet(f"color: {DIM}; background: transparent;")
+        ds.setFont(QFont("Sans Serif", 9))
+        lay.addWidget(ic)
+        lay.addWidget(tt)
+        lay.addWidget(ds)
+        lay.addStretch(1)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton and callable(self._on_click):
+            self._on_click()
+        super().mousePressEvent(event)
+
+
+class InfoOverlay(QFrame):
+    """In-window panel that shows detailed info about a feature on card click."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setGeometry(0, 0, parent.width(), parent.height())
+        self.hide()
+
+        wrap = QVBoxLayout(self)
+        wrap.setContentsMargins(150, 110, 150, 110)
+
+        self._card = QFrame()
+        self._card.setObjectName("infocard")
+        self._card.setStyleSheet(
+            f"QFrame#infocard {{ background: {PANEL_BLACK}; border-radius: 18px;"
+            " border: 1px solid rgba(255,255,255,0.14); }"
+        )
+        wrap.addWidget(self._card)
+
+        lay = QVBoxLayout(self._card)
+        lay.setContentsMargins(34, 30, 34, 28)
+        lay.setSpacing(12)
+
+        self._icon = QLabel()
+        self._icon.setStyleSheet("background: transparent;")
+        self._icon.setAlignment(Qt.AlignHCenter)
+        lay.addWidget(self._icon)
+
+        self._title = QLabel()
+        self._title.setStyleSheet(f"color: {TEXT}; background: transparent;")
+        self._title.setFont(QFont("Sans Serif", 18, QFont.Bold))
+        self._title.setAlignment(Qt.AlignHCenter)
+        lay.addWidget(self._title)
+
+        self._body = QLabel()
+        self._body.setWordWrap(True)
+        self._body.setStyleSheet(f"color: {DIM}; background: transparent;")
+        self._body.setFont(QFont("Sans Serif", 11))
+        self._body.setAlignment(Qt.AlignHCenter)
+        lay.addWidget(self._body)
+
+        lay.addStretch(1)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        ok = QPushButton(tr("Got it"))
+        ok.setCursor(Qt.PointingHandCursor)
+        ok.setFixedHeight(42)
+        ok.setStyleSheet(
+            f"""
+            QPushButton {{ color: #0a0a0c; background: {ACCENT}; border: none;
+                           border-radius: 11px; padding: 0 28px;
+                           font-size: 13px; font-weight: bold; }}
+            QPushButton:hover {{ background: {ACCENT_HOVER}; }}
+            """
+        )
+        ok.clicked.connect(self.hide)
+        row.addWidget(ok)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(0, 0, 0, 205))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if not self._card.geometry().contains(event.position().toPoint()):
+            self.hide()
+
+    def present(self, icon: str, title: str, body: str) -> None:
+        self._icon.setPixmap(ui.themed_pixmap(icon, 48))
+        self._title.setText(title)
+        self._body.setText(body)
+        self.show()
+        self.raise_()
+
+
+class Welcome(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self._drag_offset: QPoint | None = None
+        self.setWindowTitle("Maze Linux")
+        self.setWindowIcon(ui.logo_icon())
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowSystemMenuHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedSize(WIN_W, WIN_H)
+
+        root = Glass(make_watermark(), self)
+        root.setObjectName("root")
+        root.setGeometry(0, 0, WIN_W, WIN_H)
+
+        self._row = QHBoxLayout(root)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(0)
+        self._row.addWidget(self._build_sidebar())
+        self._row.addWidget(self._build_content(), 1)
+
+        self._overlay = InfoOverlay(self)
+
+    def _set_language(self, code: str) -> None:
+        set_language(code)
+        self._rebuild_ui()
+
+    def _rebuild_ui(self) -> None:
+        """Rebuild sidebar + content in the active language."""
+        timer = getattr(self, "_tip_timer", None)
+        if timer is not None:
+            timer.stop()
+        while self._row.count():
+            item = self._row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        self._row.addWidget(self._build_sidebar())
+        self._row.addWidget(self._build_content(), 1)
+
+    # -- shell ----------------------------------------------------------------
+    def _build_sidebar(self) -> QWidget:
+        bar = QFrame()
+        bar.setFixedWidth(200)
+        bar.setStyleSheet("QFrame { background: rgba(255,255,255,0.025); }")
+        lay = QVBoxLayout(bar)
+        lay.setContentsMargins(16, 26, 16, 20)
+        lay.setSpacing(6)
+
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setStyleSheet("background: transparent;")
+        pm = ui.logo_pixmap()
+        if not pm.isNull():
+            logo.setPixmap(pm.scaled(72, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        lay.addWidget(logo, 0, Qt.AlignHCenter)
+
+        word = QLabel("Maze Linux")
+        word.setAlignment(Qt.AlignCenter)
+        word.setStyleSheet(f"color: {TEXT}; background: transparent;")
+        word.setFont(QFont("Sans Serif", 13, QFont.Bold))
+        lay.addWidget(word)
+        lay.addSpacing(18)
+
+        self._nav_group = QButtonGroup(self)
+        self._nav_group.setExclusive(True)
+        pages = [
+            ("go-home", "Welcome"),
+            ("security-high", "Security"),
+            ("network-vpn", "Privacy"),
+            ("applications-science", "AI"),
+            ("computer", "System"),
+        ]
+        for i, (icon, label) in enumerate(pages):
+            btn = NavButton(icon, tr(label))
+            self._nav_group.addButton(btn, i)
+            lay.addWidget(btn)
+            if i == 0:
+                btn.setChecked(True)
+        self._nav_group.idClicked.connect(self._on_nav)
+
+        lay.addStretch(1)
+        lang = QLabel(tr("Language"))
+        lang.setStyleSheet(f"color: {FAINT}; background: transparent;")
+        lang.setFont(QFont("Sans Serif", 8, QFont.Bold))
+        lay.addWidget(lang)
+        lay.addWidget(ui.language_toggle(self._set_language))
+        return bar
+
+    def _build_content(self) -> QWidget:
+        wrap = QFrame()
+        wrap.setStyleSheet("QFrame { background: transparent; }")
+        outer = QVBoxLayout(wrap)
+        outer.setContentsMargins(30, 18, 30, 22)
+        outer.setSpacing(0)
+
+        bar = QHBoxLayout()
+        bar.addStretch(1)
+        close = QPushButton("✕")
+        close.setCursor(Qt.PointingHandCursor)
+        close.setFixedSize(30, 30)
+        close.setStyleSheet(
+            f"""
+            QPushButton {{ color: {DIM}; background: transparent; border: none;
+                           font-size: 16px; border-radius: 15px; }}
+            QPushButton:hover {{ color: white; background: rgba(224,68,68,0.25); }}
+            """
+        )
+        close.clicked.connect(self.close)
+        bar.addWidget(close)
+        outer.addLayout(bar)
+
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._page_welcome())
+        self._stack.addWidget(self._page_security())
+        self._stack.addWidget(self._page_privacy())
+        self._stack.addWidget(self._page_ai())
+        self._stack.addWidget(self._page_system())
+        outer.addWidget(self._stack, 1)
+
+        outer.addSpacing(12)
+        outer.addLayout(self._build_footer())
+        return wrap
+
+    def _on_nav(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
+
+    def show_info(self, icon: str, title: str, body: str) -> None:
+        self._overlay.present(icon, title, body)
+
+    # -- pages ----------------------------------------------------------------
+    def _page_welcome(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(8)
+
+        col.addWidget(heading(tr("Welcome to Maze Linux"), 22))
+        col.addWidget(paragraph(tr(
+            "A fully loaded Arch desktop, ready for security, privacy and AI. "
+            "Use the tabs on the left to inspect your system, or click a card "
+            "below to learn more."
+        )))
+        col.addSpacing(8)
+
+        grid = QGridLayout()
+        grid.setSpacing(14)
+        cards = [
+            ("security-high", "Security", "OpenSnitch, AppArmor, firewalld.",
+             "Maze ships with layered defences, on by default. OpenSnitch is an "
+             "application firewall that asks for your approval before any program "
+             "is allowed to connect to the internet. AppArmor confines apps so "
+             "they can only touch what they need, and firewalld manages your "
+             "network zones — so a compromised app can do far less harm."),
+            ("network-vpn", "Privacy", "Tor, MAC randomisation, hardened apps.",
+             "Stay anonymous by design. The Tor Browser routes your traffic "
+             "through the Tor network, MAC address randomisation hides your "
+             "hardware identity on every network you join, and privacy-respecting "
+             "applications come preconfigured out of the box."),
+            ("applications-science", "AI", "Local LLMs with Ollama, fully offline.",
+             "Run powerful large language models entirely on your own machine "
+             "with Ollama. Nothing is sent to the cloud and no data ever leaves "
+             "your computer. Once a model is downloaded it works completely "
+             "offline — private AI that's yours alone."),
+            ("package-x-generic", "Software",
+             "Install thousands of apps with Discover.",
+             "Discover is the graphical app store for your desktop. Browse and "
+             "install thousands of applications from the Arch repositories and "
+             "Flatpak with a single click — no terminal required."),
+            ("system-software-update", "Updates",
+             "Keep your rolling-release system current.",
+             "Maze is a rolling release built on Arch Linux, so you always get "
+             "the latest software without ever reinstalling. Updating regularly "
+             "is the best way to stay secure."),
+            ("computer", "System", "Inspect your hardware and services.",
+             "The System tab shows your live hardware details and the running "
+             "state of every Maze security service, with a first-steps checklist "
+             "to help you get going."),
+            ("video-display", "Graphics",
+             "NVIDIA GPU? Get full resolution & performance.",
+             "Maze uses OPEN-SOURCE graphics drivers (nouveau / Mesa) by default — "
+             "they need no setup and are Secure-Boot clean. On some NVIDIA GPUs, "
+             "though, nouveau gives poor resolution or weak multi-monitor support.\n\n"
+             "For full resolution, performance and multi-monitor on an NVIDIA card, "
+             "install the proprietary driver. Open a terminal and run:\n\n"
+             "    sudo maze-gpu-driver\n\n"
+             "It installs and configures the NVIDIA driver, and on Secure Boot "
+             "systems it signs the kernel modules with your machine key "
+             "automatically. Reboot when it finishes. (You can revert any time "
+             "with: sudo maze-gpu-driver --open)"),
+        ]
+        for i, (icon, title, desc, info) in enumerate(cards):
+            t_title, t_desc, t_info = tr(title), tr(desc), tr(info)
+            cb = (lambda ic=icon, t=t_title, nf=t_info: self.show_info(ic, t, nf))
+            grid.addWidget(Card(icon, t_title, t_desc, cb), i // 3, i % 3)
+        col.addLayout(grid)
+        col.addStretch(1)
+        return page
+
+    def _page_security(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(10)
+        col.addWidget(heading(tr("Security")))
+        col.addWidget(paragraph(tr(
+            "These defensive services are installed and enabled on Maze by "
+            "default. Below is their live state on this system."
+        )))
+        col.addSpacing(4)
+        if maze_status is not None:
+            for label, _unit, state in maze_status.security_status():
+                col.addWidget(status_row(label, state, on_text="Running",
+                                         off_text="Stopped"))
+        else:
+            col.addWidget(paragraph(tr("Status unavailable.")))
+        col.addStretch(1)
+        return page
+
+    def _page_privacy(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(10)
+        col.addWidget(heading(tr("Privacy")))
+        col.addWidget(paragraph(tr(
+            "Maze is built to keep you anonymous. Tor is available for anonymous "
+            "browsing, and your hardware MAC address is randomised on every "
+            "network you join."
+        )))
+        col.addSpacing(4)
+        mac = maze_status.mac_randomization_enabled() if maze_status else None
+        col.addWidget(status_row("MAC randomisation", mac, on_text="Enabled",
+                                 off_text="Disabled"))
+        tor = maze_status.tor_status() if maze_status else None
+        col.addWidget(status_row("Tor service", tor, on_text="Running",
+                                 off_text="Stopped (start when needed)"))
+        col.addStretch(1)
+        return page
+
+    def _page_ai(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(10)
+        col.addWidget(heading(tr("Artificial Intelligence")))
+        col.addWidget(paragraph(tr(
+            "Ollama lets you run large language models locally and offline. "
+            "Pull a model from a terminal with, for example, `ollama run llama3`."
+        )))
+        col.addSpacing(4)
+        ai = maze_status.ollama_status() if maze_status else None
+        col.addWidget(status_row("Ollama service", ai, on_text="Running",
+                                 off_text="Stopped"))
+
+        models = maze_status.ollama_models() if maze_status else None
+        if models:
+            col.addSpacing(6)
+            lab = QLabel(tr("Installed models"))
+            lab.setStyleSheet(f"color: {FAINT}; background: transparent;")
+            lab.setFont(QFont("Sans Serif", 9, QFont.Bold))
+            col.addWidget(lab)
+            for name in models[:6]:
+                col.addWidget(status_row(name, True, on_text="Ready"))
+        else:
+            col.addWidget(paragraph(tr(
+                "No models installed yet — pull one to get started."
+            )))
+        col.addStretch(1)
+        return page
+
+    def _page_system(self) -> QWidget:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(9)
+        col.addWidget(heading(tr("System")))
+
+        facts = QGridLayout()
+        facts.setSpacing(8)
+        for n, (icon, value) in enumerate(system_facts()):
+            facts.addWidget(ui.icon_pill(icon, value), n // 2, n % 2)
+        facts.setColumnStretch(0, 1)
+        facts.setColumnStretch(1, 1)
+        col.addLayout(facts)
+
+        self._copy_btn = QPushButton(f"⧉  {tr('Copy')}")
+        self._copy_btn.setCursor(Qt.PointingHandCursor)
+        self._copy_btn.setStyleSheet(
+            f"""
+            QPushButton {{ color: {TEXT}; background: {PILL_BG}; border: none;
+                           border-radius: 12px; padding: 6px 13px; font-size: 9pt; }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.13); }}
+            """
+        )
+        self._copy_btn.clicked.connect(self._copy_summary)
+        copy_row = QHBoxLayout()
+        copy_row.addWidget(self._copy_btn)
+        copy_row.addStretch(1)
+        col.addLayout(copy_row)
+
+        col.addSpacing(8)
+        steps = QLabel(tr("First steps"))
+        steps.setStyleSheet(f"color: {FAINT}; background: transparent;")
+        steps.setFont(QFont("Sans Serif", 9, QFont.Bold))
+        col.addWidget(steps)
+
+        checklist = [
+            "Explore your security tools in the Security tab",
+            "Pull a local AI model: ollama run llama3",
+            "Pick a wallpaper (right-click the desktop)",
+            "Update your system to the latest packages",
+            "Visit the Maze website to learn more",
+        ]
+        for item in checklist:
+            cb = QCheckBox(tr(item))
+            cb.setCursor(Qt.PointingHandCursor)
+            cb.setStyleSheet(
+                f"QCheckBox {{ color: {DIM}; background: transparent; font-size: 10pt;"
+                " spacing: 9px; }"
+                f"QCheckBox::indicator {{ width: 15px; height: 15px; border-radius: 4px;"
+                " border: 1px solid rgba(255,255,255,0.30); background: transparent; }}"
+                f"QCheckBox::indicator:checked {{ background: {OK_GREEN};"
+                " border: 1px solid " + OK_GREEN + "; }}"
+            )
+            col.addWidget(cb)
+        col.addStretch(1)
+        return page
+
+    # -- footer ---------------------------------------------------------------
+    def _build_footer(self) -> QHBoxLayout:
+        f = QHBoxLayout()
+        self._tip_i = 0
+        self._tip = QLabel(tr(TIPS[0]))
+        self._tip.setStyleSheet(f"color: {FAINT}; background: transparent;")
+        self._tip.setFont(QFont("Sans Serif", 9))
+        self._tip_timer = QTimer(self)
+        self._tip_timer.timeout.connect(self._next_tip)
+        self._tip_timer.start(6000)
+        f.addWidget(self._tip)
+        f.addStretch(1)
+
+        web = QPushButton(tr("Visit Website"))
+        web.setCursor(Qt.PointingHandCursor)
+        web.setFixedHeight(42)
+        web.setStyleSheet(
+            f"""
+            QPushButton {{ color: #16181d; background: {ACCENT}; border: none;
+                           border-radius: 12px; padding: 0 24px;
+                           font-size: 12px; font-weight: bold; }}
+            QPushButton:hover {{ background: {ACCENT_HOVER}; }}
+            """
+        )
+        web.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(WEBSITE_URL)))
+
+        close = QPushButton(tr("Close"))
+        close.setCursor(Qt.PointingHandCursor)
+        close.setFixedHeight(42)
+        close.setStyleSheet(
+            f"""
+            QPushButton {{ color: {TEXT}; background: rgba(255,255,255,0.08);
+                           border: none; border-radius: 12px; padding: 0 24px;
+                           font-size: 12px; }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.16); }}
+            """
+        )
+        close.clicked.connect(self.close)
+        f.addWidget(web)
+        f.addSpacing(10)
+        f.addWidget(close)
+        return f
+
+    def _next_tip(self) -> None:
+        self._tip_i = (self._tip_i + 1) % len(TIPS)
+        self._tip.setText(tr(TIPS[self._tip_i]))
+
+    def _copy_summary(self) -> None:
+        QApplication.clipboard().setText(system_summary())
+        self._copy_btn.setText(f"✓  {tr('Copied')}")
+        QTimer.singleShot(1600, lambda: self._copy_btn.setText(f"⧉  {tr('Copy')}"))
+
+    # -- window behaviour -----------------------------------------------------
+    def show_animated(self) -> None:
+        screen = QApplication.primaryScreen().availableGeometry()
+        end = self.frameGeometry()
+        end.moveCenter(screen.center())
+        self.move(end.topLeft())
+        start = QPoint(end.x(), end.y() + 24)
+
+        self.setWindowOpacity(0.0)
+        self.show()
+        enable_kde_blur(int(self.winId()))
+
+        self._fade = QPropertyAnimation(self, b"windowOpacity")
+        self._fade.setDuration(320)
+        self._fade.setStartValue(0.0)
+        self._fade.setEndValue(1.0)
+        self._fade.setEasingCurve(QEasingCurve.OutCubic)
+        self._fade.start()
+
+        self._slide = QPropertyAnimation(self, b"pos")
+        self._slide.setDuration(360)
+        self._slide.setStartValue(start)
+        self._slide.setEndValue(end.topLeft())
+        self._slide.setEasingCurve(QEasingCurve.OutCubic)
+        self._slide.start()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton and event.position().y() < 70:
+            self._drag_offset = event.globalPosition().toPoint() - self.pos()
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._drag_offset is not None and event.buttons() & Qt.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        self._drag_offset = None
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key_Escape:
+            if self._overlay.isVisible():
+                self._overlay.hide()
+            else:
+                self.close()
+            return
+        super().keyPressEvent(event)
+
+
+def main() -> int:
+    disable_autostart()
+    app = QApplication(sys.argv)
+    app.setApplicationName("Maze Welcome")
+    # Map the window to its .desktop entry so the panel/dock shows the Maze logo
+    # instead of the generic XWayland icon (matches StartupWMClass=maze-welcome).
+    app.setDesktopFileName("maze-welcome")
+    app.setWindowIcon(ui.logo_icon())
+    win = Welcome()
+    win.show_animated()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#
+# maze-aur-setup — Install the Maze applications on the installed system.
+#
+# Deployed by the installer and launched once on the new user's first desktop
+# login. Runs as the (non-root, sudo-capable) user. Maze's OWN applications come
+# from the official [mazelinux] pacman repo (plain pacman -S); the third-party
+# apps are built with makepkg and installed with pacman -U (no AUR helper).
+# Removes its own autostart entry once finished. Requires an internet connection.
+#
+set -uo pipefail
+
+# Maze's own applications — published in the [mazelinux] repo (configured in
+# /etc/pacman.conf), so they install with a plain pacman -S, not from the AUR.
+MAZE_REPO_PKGS=(
+    entropy-shield qlam maze hazedrop haze linux-chan-ai sentinai
+)
+
+# Third-party apps that only exist on the AUR — built with makepkg. 'paru' is
+# built from source so it matches this system's libalpm ABI.
+PKGS=(
+    paru
+    brave-origin-bin mullvad-browser-bin upscayl-bin session-desktop-bin
+    joplin-bin onlyoffice-bin
+)
+
+# Verbose git/makepkg/pacman output goes only to this log; the window shows just
+# short status lines.
+VLOG="${HOME:-/tmp}/.local/state/maze/aur-install.log"
+mkdir -p "$(dirname "${VLOG}")" 2>/dev/null || true
+: > "${VLOG}" 2>/dev/null || VLOG=/dev/null
+
+# Retry a network-bound command a few times with a short backoff, so a single
+# unresponsive mirror/AUR no longer drops a package on a momentary hiccup. The
+# command's output is sent to the verbose log, not the screen.
+retry() {
+    local tries="$1"; shift
+    local n=1
+    while true; do
+        "$@" >>"${VLOG}" 2>&1 && return 0
+        (( n >= tries )) && return 1
+        echo "   ...attempt ${n}/${tries} failed, retrying in $((n*5))s"
+        sleep $((n*5)); ((n++))
+    done
+}
+
+AUTOSTART="${HOME}/.config/autostart/maze-aur-setup.desktop"
+MARKER="${HOME}/.local/state/maze/aur-setup.done"
+
+c_reset=$'\e[0m'; c_acc=$'\e[38;2;140;100;240m'; c_warn=$'\e[33m'; c_ok=$'\e[32m'
+
+printf '%s== Maze Linux — installing AUR applications ==%s\n\n' "${c_acc}" "${c_reset}"
+
+[[ "${EUID}" -eq 0 ]] && { echo "Run as your normal user, not root." >&2; exit 1; }
+[[ -f "${MARKER}" ]] && { echo "Already completed."; rm -f "${AUTOSTART}"; exit 0; }
+
+echo "Waiting for an internet connection..."
+connected=0
+for _ in $(seq 1 18); do
+    if ping -c1 -W2 archlinux.org >/dev/null 2>&1; then connected=1; break; fi
+    sleep 5
+done
+if [[ "${connected}" -ne 1 ]]; then
+    printf '%sNo internet yet.%s Connect and run %smaze-aur-setup%s again.\n' \
+        "${c_warn}" "${c_reset}" "${c_acc}" "${c_reset}"
+    exit 1
+fi
+
+# Build each package directly with makepkg and install it with
+# pacman -U --overwrite (the same method the installer uses), which tolerates
+# leftover files from an earlier partial install. 'paru' is built from source so
+# it matches this system's libalpm ABI (the precompiled paru-bin can break after
+# a pacman soname bump). The network-bound steps are retried.
+echo "Installing the latest Maze applications..."
+retry 3 sudo pacman -Sy --noconfirm --needed base-devel git || true
+
+# Clone, build and install one AUR package by name. Returns 0 on success.
+build_one() {
+    local pkg="$1" tmp ok=1
+    tmp="$(mktemp -d)"
+    if retry 3 git clone --depth 1 "https://aur.archlinux.org/${pkg}.git" "${tmp}/${pkg}" \
+        && retry 2 bash -c "cd '${tmp}/${pkg}' && makepkg -s --noconfirm --needed"; then
+        shopt -s nullglob
+        local pkgfiles=("${tmp}/${pkg}"/*.pkg.tar.*)
+        shopt -u nullglob
+        if [[ ${#pkgfiles[@]} -gt 0 ]] \
+            && retry 2 sudo pacman -U --noconfirm --needed --overwrite '*' "${pkgfiles[@]}"; then
+            ok=0
+        fi
+    fi
+    rm -rf "${tmp}"
+    return "${ok}"
+}
+
+failed=()
+
+# Maze's own applications: install from the [mazelinux] repo with pacman -S
+# (refresh + install, retried). Only the third-party AUR apps below are built.
+printf '%s:: Installing Maze applications from the [mazelinux] repo...%s\n' "${c_acc}" "${c_reset}"
+if retry 3 sudo pacman -Sy --noconfirm --needed "${MAZE_REPO_PKGS[@]}"; then
+    printf '   -> Maze applications installed.\n'
+else
+    printf '%s   -> ERROR: some Maze applications failed (see %s).%s\n' "${c_warn}" "${VLOG}" "${c_reset}"
+    failed+=("${MAZE_REPO_PKGS[@]}")
+fi
+
+total=${#PKGS[@]}; i=0
+for pkg in "${PKGS[@]}"; do
+    ((i++))
+    printf '%s:: (%s/%s) Installing %s from the AUR...%s\n' "${c_acc}" "${i}" "${total}" "${pkg}" "${c_reset}"
+    if build_one "${pkg}"; then
+        printf '   -> %s installed.\n' "${pkg}"
+    else
+        printf '%s   -> ERROR: %s failed (see %s).%s\n' "${c_warn}" "${pkg}" "${VLOG}" "${c_reset}"
+        failed+=("${pkg}")
+    fi
+done
+
+# AUR helper fallback: if paru did not install, try yay (also from source) so the
+# system still has a usable helper.
+if printf '%s\n' "${PKGS[@]}" | grep -qx paru && ! pacman -Qq paru >/dev/null 2>&1; then
+    printf '%s:: paru not installed — falling back to yay%s\n' "${c_warn}" "${c_reset}"
+    if build_one yay; then
+        printf '%s:: yay installed (paru fallback)%s\n' "${c_ok}" "${c_reset}"
+        _kept=()
+        for _x in "${failed[@]}"; do [[ "${_x}" == paru ]] || _kept+=("${_x}"); done
+        failed=("${_kept[@]}")
+    else
+        failed+=("yay")
+    fi
+fi
+
+if [[ ${#failed[@]} -eq 0 ]]; then
+    mkdir -p "$(dirname "${MARKER}")"
+    : > "${MARKER}"
+    rm -f "${AUTOSTART}"
+    printf '\n%sAll Maze applications installed.%s You can close this window.\n' "${c_ok}" "${c_reset}"
+else
+    printf '\n%sFailed: %s%s\n' "${c_warn}" "${failed[*]}" "${c_reset}"
+    printf 'Re-run %smaze-aur-setup%s to retry.\n' "${c_acc}" "${c_reset}"
+    exit 1
+fi

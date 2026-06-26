@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Maze Linux: pick the best monitor as primary on first login -----------------
+# A fresh install carries no saved screen state (the installer strips it so KWin
+# re-detects outputs per hardware). On a multi-monitor machine KWin then makes
+# whatever connector it enumerates first the primary — and the Maze panel, which
+# is pinned to screen 0, lands on the "wrong" monitor. Here we promote the
+# highest-resolution connected output to primary so the panel and desktop land
+# on the best screen.
+#
+# Runs once per user: after the first successful pass it drops a marker so the
+# user's own Display-settings choices are never overridden on later logins. It
+# also only acts when more than one output is connected — a single screen's
+# primary is unambiguous and there is nothing to fix.
+set -u
+
+marker="${XDG_STATE_HOME:-$HOME/.local/state}/maze/primary-screen.done"
+[[ -e "$marker" ]] && exit 0
+
+command -v kscreen-doctor >/dev/null 2>&1 || exit 0
+
+# Wait for the session to bring outputs up (kscreen may not be ready instantly).
+json=""
+for _i in $(seq 1 20); do
+    json=$(kscreen-doctor -j 2>/dev/null) && [[ -n "$json" ]] && break
+    sleep 1
+done
+[[ -n "$json" ]] || exit 0
+
+# JSON is handed to python via the environment (KS_JSON), not stdin: the python
+# program itself comes from the heredoc on stdin, so it can't also read the data
+# from there.
+# Output is "<count> <name>" — count first so an empty name (no usable output)
+# can never be misread as the count.
+read -r enabled_count best < <(KS_JSON="$json" python3 <<'PY'
+import json, os, sys
+try:
+    data = json.loads(os.environ.get("KS_JSON", ""))
+except Exception:
+    print("0")
+    sys.exit(0)
+best = None  # ((area, refresh), name)
+count = 0
+for o in data.get("outputs", []):
+    if not o.get("enabled") or not o.get("connected"):
+        continue
+    name = o.get("name")
+    if not name:
+        continue
+    count += 1
+    size = o.get("size") or {}
+    area = int(size.get("width", 0)) * int(size.get("height", 0))
+    refresh = 0.0
+    cur = o.get("currentModeId")
+    for m in o.get("modes", []):
+        if str(m.get("id")) == str(cur):
+            refresh = float(m.get("refreshRate", 0) or 0)
+            break
+    key = (area, refresh)
+    if best is None or key > best[0]:
+        best = (key, name)
+print("%d %s" % (count, best[1] if best else ""))
+PY
+)
+
+mkdir -p "$(dirname "$marker")"
+if [[ "${enabled_count:-0}" -gt 1 && -n "${best:-}" ]]; then
+    kscreen-doctor "output.${best}.priority.1" >/dev/null 2>&1 || true
+fi
+# Mark done regardless so we never fight the user's later manual choices.
+: > "$marker"
+exit 0

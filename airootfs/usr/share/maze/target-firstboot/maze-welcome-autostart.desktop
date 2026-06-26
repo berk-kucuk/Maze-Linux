@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Maze Welcome
+Comment=Maze Linux first-boot welcome (removes itself after first run)
+Exec=maze-welcome
+Icon=/usr/share/pixmaps/maze-simple-logo.png
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;
+StartupNotify=false

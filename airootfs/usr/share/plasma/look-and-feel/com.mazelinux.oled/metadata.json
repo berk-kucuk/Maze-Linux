@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Maze Linux"
+            }
+        ],
+        "Description": "Maze Linux true-black OLED global theme (Breeze + Maze Dark colours + Maze splash)",
+        "Id": "com.mazelinux.oled",
+        "License": "MIT",
+        "Name": "Maze OLED",
+        "Version": "1.0",
+        "Website": "https://mazelinux.berkkucukk.com.tr"
+    }
+}

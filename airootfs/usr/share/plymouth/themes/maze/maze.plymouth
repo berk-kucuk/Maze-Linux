@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Maze Linux
+Description=Maze Linux boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/maze
+ScriptFile=/usr/share/plymouth/themes/maze/maze.script

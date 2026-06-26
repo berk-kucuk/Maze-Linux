@@ -1,0 +1,7 @@
+#!/bin/bash
+echo "=== MAC Changer Logs ==="
+if [[ -f /var/log/mac-changer/mac-changer.log ]]; then
+    tail -50 /var/log/mac-changer/mac-changer.log
+else
+    echo "No log file yet."
+fi

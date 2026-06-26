@@ -1,0 +1,214 @@
+import ipaddress
+from typing import assert_never, override
+
+from archinstall.lib.menu.helpers import Input, Selection
+from archinstall.lib.menu.list_manager import ListManager
+from archinstall.lib.models.network import NetworkConfiguration, Nic, NicType
+from archinstall.lib.networking import list_interfaces
+from archinstall.lib.translationhandler import tr
+from archinstall.tui.menu_item import MenuItem, MenuItemGroup
+from archinstall.tui.result import ResultType
+
+
+class ManualNetworkConfig(ListManager[Nic]):
+	def __init__(self, prompt: str, preset: list[Nic]):
+		self._actions = [
+			tr('Add interface'),
+			tr('Edit interface'),
+			tr('Delete interface'),
+		]
+
+		super().__init__(
+			preset,
+			[self._actions[0]],
+			self._actions[1:],
+			prompt,
+		)
+
+	async def show(self) -> list[Nic] | None:
+		return await super()._run()
+
+	@override
+	def selected_action_display(self, selection: Nic) -> str:
+		return selection.iface if selection.iface else ''
+
+	@override
+	async def handle_action(self, action: str, entry: Nic | None, data: list[Nic]) -> list[Nic]:
+		if action == self._actions[0]:  # add
+			iface = await self._select_iface(data)
+			if iface:
+				nic = Nic(iface=iface)
+				nic = await self._edit_iface(nic)
+				data += [nic]
+		elif entry:
+			if action == self._actions[1]:  # edit interface
+				data = [d for d in data if d.iface != entry.iface]
+				nic = await self._edit_iface(entry)
+				data.append(nic)
+			elif action == self._actions[2]:  # delete
+				data = [d for d in data if d != entry]
+
+		return data
+
+	async def _select_iface(self, data: list[Nic]) -> str | None:
+		all_ifaces = list_interfaces().values()
+		existing_ifaces = [d.iface for d in data]
+		available = set(all_ifaces) - set(existing_ifaces)
+
+		if not available:
+			return None
+
+		if not available:
+			return None
+
+		items = [MenuItem(i, value=i) for i in available]
+		group = MenuItemGroup(items, sort_items=True)
+
+		result = await Selection[str](
+			group,
+			header=tr('Select an interface'),
+			allow_skip=True,
+		).show()
+
+		match result.type_:
+			case ResultType.Skip:
+				return None
+			case ResultType.Selection:
+				return result.get_value()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+
+	async def _get_ip_address(self, header: str, allow_skip: bool, multi: bool, preset: str | None = None, allow_empty: bool = False) -> str | None:
+		def validator(ip: str | None) -> str | None:
+			failure = tr('You need to enter a valid IP in IP-config mode')
+
+			if not ip:
+				if allow_empty:
+					return None
+				return failure
+
+			if multi:
+				ips = ip.split(' ')
+			else:
+				ips = [ip]
+
+			try:
+				for ip in ips:
+					ipaddress.ip_interface(ip)
+				return None
+			except ValueError:
+				return failure
+
+		result = await Input(
+			header=header,
+			validator_callback=validator,
+			allow_skip=allow_skip,
+			default_value=preset,
+		).show()
+
+		match result.type_:
+			case ResultType.Skip:
+				return preset
+			case ResultType.Selection:
+				return result.get_value()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+
+	async def _edit_iface(self, edit_nic: Nic) -> Nic:
+		iface_name = edit_nic.iface
+		modes = ['DHCP (auto detect)', 'IP (static)']
+		default_mode = 'DHCP (auto detect)'
+
+		header = tr('Select which mode to configure for "{}"').format(iface_name)
+
+		items = [MenuItem(m, value=m) for m in modes]
+		group = MenuItemGroup(items, sort_items=True)
+		group.set_default_by_value(default_mode)
+
+		result = await Selection[str](
+			group,
+			header=header,
+			allow_skip=False,
+		).show()
+
+		match result.type_:
+			case ResultType.Selection:
+				mode = result.get_value()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+			case ResultType.Skip:
+				raise ValueError('The mode menu should not be skippable')
+			case _:
+				assert_never(result.type_)
+
+		if mode == 'IP (static)':
+			header = tr('Enter the IP and subnet for {} (example: 192.168.0.5/24): ').format(iface_name) + '\n'
+			ip = await self._get_ip_address(header, False, False)
+
+			header = tr('Enter your gateway (router) IP address (leave blank for none)') + '\n'
+			gateway = await self._get_ip_address(header, True, False, allow_empty=True)
+
+			if edit_nic.dns:
+				display_dns = ' '.join(edit_nic.dns)
+			else:
+				display_dns = None
+
+			header = tr('Enter your DNS servers with space separated (leave blank for none)') + '\n'
+			dns_servers = await self._get_ip_address(header, True, True, display_dns, allow_empty=True)
+
+			dns = []
+			if dns_servers is not None:
+				dns = dns_servers.split(' ')
+
+			return Nic(iface=iface_name, ip=ip, gateway=gateway, dns=dns, dhcp=False)
+		else:
+			# this will contain network iface names
+			return Nic(iface=iface_name)
+
+
+async def select_network(preset: NetworkConfiguration | None) -> NetworkConfiguration | None:
+	"""
+	Configure the network on the newly installed system
+	"""
+
+	items = [MenuItem(n.display_msg(), value=n) for n in NicType]
+	group = MenuItemGroup(items, sort_items=False)
+
+	if preset:
+		group.set_selected_by_value(preset.type)
+
+	header = tr('Choose network configuration') + '\n'
+	header += tr('Recommended: Network Manager for desktop, Manual for server') + '\n'
+
+	result = await Selection[NicType](
+		group,
+		header=header,
+		allow_reset=True,
+		allow_skip=True,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Reset:
+			return None
+		case ResultType.Selection:
+			config = result.get_value()
+
+			match config:
+				case NicType.ISO:
+					return NetworkConfiguration(NicType.ISO)
+				case NicType.NM:
+					return NetworkConfiguration(NicType.NM)
+				case NicType.NM_IWD:
+					return NetworkConfiguration(NicType.NM_IWD)
+				case NicType.IWD:
+					return NetworkConfiguration(NicType.IWD)
+				case NicType.MANUAL:
+					preset_nics = preset.nics if preset else []
+					nics = await ManualNetworkConfig(tr('Configure interfaces'), preset_nics).show()
+
+					if nics:
+						return NetworkConfiguration(NicType.MANUAL, nics)
+
+	return preset

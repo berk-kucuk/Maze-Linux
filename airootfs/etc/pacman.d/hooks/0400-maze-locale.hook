@@ -1,0 +1,18 @@
+# remove from airootfs!
+# Generate the live medium's locales (en_US.UTF-8) during the ISO build, right
+# after glibc is installed. /etc/locale.gen is shipped in the airootfs overlay
+# (copied before pacstrap runs), so locale-gen has it available here. Runs
+# before zzzz99-remove-custom-hooks (alphabetical order) and is itself removed
+# from the final image by that hook.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = glibc
+
+[Action]
+Description = Generating Maze Linux locales (en_US.UTF-8)...
+When = PostTransaction
+Depends = glibc
+Exec = /usr/bin/locale-gen

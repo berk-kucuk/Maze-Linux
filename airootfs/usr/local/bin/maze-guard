@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""maze-guard — unprivileged client for the maze-guardd privileged broker.
+
+Sends ONE fixed verb to /run/maze/guard.sock and prints the reply. Holds no
+privilege itself; all it can do is ask the daemon to run one of its whitelisted
+actions. Usage:
+    maze-guard panic
+    maze-guard kill <camera|microphone|bluetooth|wifi|usb> <on|off>
+    maze-guard status
+Exit code 0 on an "OK ..." reply, 1 otherwise.
+"""
+import socket
+import sys
+
+SOCK = "/run/maze/guard.sock"
+
+
+def main(argv):
+    if not argv:
+        sys.stderr.write("usage: maze-guard <panic|kill <dev> <on|off>|status>\n")
+        return 2
+    msg = " ".join(argv)
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(65)
+        s.connect(SOCK)
+        s.sendall((msg + "\n").encode())
+        reply = s.recv(512).decode("utf-8", "replace").strip()
+        s.close()
+    except Exception as exc:
+        sys.stderr.write(f"maze-guard: cannot reach maze-guardd ({exc})\n")
+        return 1
+    print(reply)
+    return 0 if reply.startswith("OK") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

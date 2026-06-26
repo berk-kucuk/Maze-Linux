@@ -1,0 +1,21 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Maze Linux"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Panic mode — wipe traces, cut network and lock, with one-click restore",
+        "Icon": "/usr/share/pixmaps/maze-panic.svg",
+        "Id": "com.mazelinux.panic",
+        "License": "MIT",
+        "Name": "Maze Panic",
+        "Version": "1.0",
+        "Website": "https://mazelinux.berkkucukk.com.tr"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "SystemServices"
+}

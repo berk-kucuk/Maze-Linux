@@ -1,0 +1,14 @@
+[SddmGreeterTheme]
+Name=Maze OLED
+Description=Maze Linux true-black OLED login theme
+Author=Maze Linux
+License=MIT
+Type=sddm-theme
+Version=1.0
+Website=https://mazelinux.berkkucukk.com.tr
+Screenshot=preview.png
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=maze-oled
+Theme-API=2.0
+QtVersion=6

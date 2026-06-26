@@ -1,0 +1,38 @@
+Maze Linux installer customization
+==================================
+
+The installer is launched with the command:
+
+    maze-install
+
+It is a thin wrapper around `archinstall`. Run on its own it opens the
+interactive archinstall TUI. To customize the install, drop either of these
+files into this directory (/etc/maze-installer):
+
+    maze.json    -> forwarded to `archinstall --config FILE`
+    creds.json   -> forwarded to `archinstall --creds FILE`
+
+Both are optional. If present, `maze-install` passes them to archinstall;
+if absent, the installer is fully interactive.
+
+Templates to copy and edit are provided next to this file:
+
+    maze.json.example
+    creds.json.example
+
+Notes
+-----
+* The archinstall config schema changes between archinstall versions. After
+  copying an example, validate it against the archinstall that ships in this
+  image:
+
+      archinstall --config /etc/maze-installer/maze.json --dry-run
+
+* A *complete* config + creds lets you run an unattended install:
+
+      maze-install --silent
+
+  A *partial* config simply pre-fills the menu, leaving the rest interactive.
+
+* This data-file layout is intentional: a future Maze Linux GUI front-end can
+  generate maze.json / creds.json here, then invoke `maze-install`.

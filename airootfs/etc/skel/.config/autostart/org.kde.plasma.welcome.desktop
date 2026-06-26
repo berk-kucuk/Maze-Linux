@@ -1,0 +1,7 @@
+[Desktop Entry]
+# Maze Linux: suppress KDE's stock Plasma Welcome screen so only the Maze
+# Welcome app runs (on the first boot after install). Hidden=true masks the
+# system autostart entry at /etc/xdg/autostart/org.kde.plasma.welcome.desktop.
+Type=Application
+Name=Plasma Welcome
+Hidden=true

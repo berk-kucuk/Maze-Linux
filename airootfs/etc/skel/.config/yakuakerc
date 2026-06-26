@@ -1,0 +1,10 @@
+[Appearance]
+Skin=monochrome
+SkinInstalledWithKns=true
+
+[Dialogs]
+FirstRun=false
+
+[Window]
+Height=40
+Width=80

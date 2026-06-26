@@ -1,0 +1,4 @@
+# Maze Linux: locales generated for the live medium. en_US.UTF-8 is the live
+# default (real translations + UTF-8 collation/formatting instead of POSIX/C).
+# The installer sets the target system's own locale independently.
+en_US.UTF-8 UTF-8

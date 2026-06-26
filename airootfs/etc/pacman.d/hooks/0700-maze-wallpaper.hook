@@ -1,0 +1,17 @@
+# remove from airootfs!
+# Set the Maze wallpaper as the Plasma default after Plasma is installed during
+# the ISO build. Runs before zzzz99-remove-custom-hooks (alphabetical order) and
+# is itself removed from the final image by that hook.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = plasma-workspace
+
+[Action]
+Description = Setting the Maze default wallpaper...
+When = PostTransaction
+Depends = plasma-workspace
+Depends = python
+Exec = /usr/local/share/maze/set-default-wallpaper.sh

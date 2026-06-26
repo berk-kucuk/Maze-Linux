@@ -1,0 +1,14 @@
+[Unit]
+Description=Maze Linux: register the Flathub remote on first online boot
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/maze/flatpak-setup.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/maze-flatpak-setup
+# Retry on the next boot if the network was not ready yet.
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

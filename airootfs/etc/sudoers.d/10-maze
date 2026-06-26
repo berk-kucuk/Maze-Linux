@@ -1,0 +1,3 @@
+# Maze Linux live medium: allow members of group wheel to run any command
+# without a password. Adjust for installed systems as appropriate.
+%wheel ALL=(ALL:ALL) NOPASSWD: ALL

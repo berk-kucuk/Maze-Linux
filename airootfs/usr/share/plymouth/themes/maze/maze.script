@@ -1,0 +1,247 @@
+#By Lozano Juan Pablo <libredeb@gmail.com>
+
+Window.GetMaxWidth = fun (){
+  i = 0;
+  width = 0;
+  while (Window.GetWidth(i)){
+    width = Math.Max(width, Window.GetWidth(i));
+    i++;
+    }
+  return width;
+};
+
+Window.GetMaxHeight = fun (){
+  i = 0;
+  height = 0;
+  while (Window.GetHeight(i)){
+    height = Math.Max(height, Window.GetHeight(i));
+    i++;
+    }
+  return height;
+};
+
+if (Plymouth.GetMode() == "suspend" || Plymouth.GetMode() == "resume") {
+  background.original_image = ImageNew("suspend.png");
+  Window.SetBackgroundTopColor(1, 0, 0);
+  Window.SetBackgroundBottomColor(0, 1, 0);
+}
+else {
+  logo.original_image = ImageNew("logo.png");
+  background.original_image = ImageNew("background.png");
+  Window.SetBackgroundTopColor(0.180, 0.545, 0.020);
+  Window.SetBackgroundBottomColor(0.439, 0.573, 0.333);
+}
+
+# ---------------------------- Logo layout ----------------------------
+# Fit the logo inside a box that is at most 38% of the screen width AND 24% of
+# the screen height, preserving the original aspect ratio. This keeps it
+# well-proportioned on every resolution and aspect ratio: it can't get too wide
+# on ultra-wide displays, nor too tall on portrait / 4:3 ones.
+logo.ratio = logo.original_image.GetWidth() / logo.original_image.GetHeight();
+logo.w = Window.GetMaxWidth() * 0.285;
+logo.h = logo.w / logo.ratio;
+if (logo.h > Window.GetMaxHeight() * 0.18)
+  {
+    logo.h = Window.GetMaxHeight() * 0.18;
+    logo.w = logo.h * logo.ratio;
+  }
+
+logo.image = logo.original_image.Scale(logo.w, logo.h);
+logo.sprite = SpriteNew();
+logo.sprite.SetImage(logo.image);
+logo.opacity_angle = 0;
+
+# Dead-centre the logo, horizontally and vertically.
+logo.x = Window.GetX() + (Window.GetMaxWidth()  - logo.image.GetWidth())  / 2;
+logo.y = Window.GetY() + (Window.GetMaxHeight() - logo.image.GetHeight()) / 2;
+logo.sprite.SetPosition(logo.x, logo.y, 1);
+
+background.image = background.original_image.Scale(Window.GetMaxWidth() , Window.GetMaxHeight());
+background.sprite = SpriteNew();
+background.sprite.SetImage(background.image);
+background.sprite.SetPosition(Window.GetX(), Window.GetY(), -10);
+
+sprite_prompt = SpriteNew();
+
+#----------------------------------------- Dialog --------------------------------
+
+status = "normal";
+
+fun dialog_setup()
+  {
+    local.box;
+    local.lock;
+    local.entry;
+    local.prompt_sprite;
+    
+    box.image = ImageNew("box.png");
+    lock.image = ImageNew("lock.png");
+    entry.image = ImageNew("entry.png");
+    
+    box.sprite = SpriteNew();
+    box.sprite.SetImage(box.image);
+    box.x = Window.GetX() + Window.GetWidth()  / 2 - box.image.GetWidth()/2;
+    # Sit the LUKS password box near the bottom of the screen, horizontally
+    # centered. The Maze logo and progress bar live around the vertical centre;
+    # keeping the box at the centre made the lock icon and entry field overlap
+    # the logo. 0.86 puts it low and clear of everything above it.
+    box.y = Window.GetY() + Window.GetHeight() * 0.86 - box.image.GetHeight()/2;
+    box.z = 10000;
+    box.sprite.SetPosition(box.x, box.y, box.z);
+    
+    lock.sprite = SpriteNew();
+    lock.sprite.SetImage(lock.image);
+    lock.x = box.x + box.image.GetWidth()/2 - (lock.image.GetWidth() + entry.image.GetWidth()) / 2;
+    lock.y = box.y + box.image.GetHeight()/2 - lock.image.GetHeight()/2;
+    lock.z = box.z + 1;
+    lock.sprite.SetPosition(lock.x, lock.y, lock.z);
+    
+    entry.sprite = SpriteNew();
+    entry.sprite.SetImage(entry.image);
+    entry.x = lock.x + lock.image.GetWidth();
+    entry.y = box.y + box.image.GetHeight()/2 - entry.image.GetHeight()/2;
+    entry.z = box.z + 1;
+    entry.sprite.SetPosition(entry.x, entry.y, entry.z);
+
+    prompt_sprite = SpriteNew();
+    prompt_sprite.SetPosition(box.x, box.y - 20, box.z);
+    
+    global.dialog.box = box;
+    global.dialog.lock = lock;
+    global.dialog.entry = entry;
+    # Password is masked with asterisks ("yıldızlı"): a single text sprite that
+    # holds one "*" per typed character, drawn inside the entry field.
+    global.dialog.stars_sprite = SpriteNew();
+    global.dialog.prompt_sprite = prompt_sprite;
+    dialog_opacity (1);
+  }
+    
+fun dialog_opacity(opacity)
+  {
+    dialog.box.sprite.SetOpacity(opacity);
+    dialog.lock.sprite.SetOpacity(opacity);
+    dialog.entry.sprite.SetOpacity(opacity);
+    dialog.prompt_sprite.SetOpacity(opacity);
+    dialog.stars_sprite.SetOpacity(opacity);
+  }
+
+fun display_normal_callback ()
+  {
+    global.status = "normal";
+    if (global.dialog)
+      dialog_opacity (0);
+  }
+
+fun display_password_callback (prompt, bullets)
+  {
+    global.status = "password";
+    if (!global.dialog) 
+	dialog_setup();
+    else
+	dialog_opacity(1);
+
+    # Center the prompt text horizontally on the screen and sit it just above
+    # the password box. The position must be (re)computed here, not in
+    # dialog_setup(), because the text width is only known once the Image.Text is
+    # built. Without this the prompt was anchored to the box's left edge and
+    # appeared shifted to the right / off-center.
+    prompt_image = Image.Text(prompt, 1.0, 1.0, 1.0);
+    dialog.prompt_sprite.SetImage(prompt_image);
+    dialog.prompt_sprite.SetPosition(
+      Window.GetX() + (Window.GetWidth() - prompt_image.GetWidth()) / 2,
+      dialog.box.y - prompt_image.GetHeight() - 10,
+      dialog.box.z);
+
+    # One asterisk per typed character, centered in the entry field — but never
+    # more than physically fit inside it. A long LUKS passphrase would otherwise
+    # keep adding asterisks until the text spilled out of the entry box, so the
+    # count is capped to what fits (leaving a small left/right margin).
+    star_unit = Image.Text("*", 1.0, 1.0, 1.0);
+    max_stars = Math.Int((dialog.entry.image.GetWidth() - 12) / star_unit.GetWidth());
+    if (max_stars < 1)
+      max_stars = 1;
+    shown = bullets;
+    if (shown > max_stars)
+      shown = max_stars;
+
+    stars = "";
+    for (index = 0; index < shown; index++)
+      stars = stars + "*";
+
+    if (bullets > 0)
+      {
+        star_image = Image.Text(stars, 1.0, 1.0, 1.0);
+        dialog.stars_sprite.SetImage(star_image);
+        dialog.stars_sprite.SetPosition(
+          dialog.entry.x + (dialog.entry.image.GetWidth()  - star_image.GetWidth())  / 2,
+          dialog.entry.y + (dialog.entry.image.GetHeight() - star_image.GetHeight()) / 2,
+          dialog.entry.z + 1);
+        dialog.stars_sprite.SetOpacity(1);
+      }
+    else
+      dialog.stars_sprite.SetOpacity(0);
+  }
+
+fun display_message_callback (prompt)
+  {
+  
+prompt = Image.Text(prompt,1.0, 1.0, 1.0);
+sprite_prompt.SetImage(prompt);
+sprite_prompt.SetPosition(Window.GetX() + (Window.GetWidth() - prompt.GetWidth()) / 2, Window.GetY() + Window.GetHeight() * 0.93, 2);
+  }
+
+/* instantiate dialog at startup, to ensure all icons are loaded in memory before initrd is unmounted, in case /usr isn't mounted yet */
+dialog_setup(); dialog_opacity(0);
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetMessageFunction(display_message_callback);
+
+#----------------------------------------- Progress Bar --------------------------------
+
+# Scale the progress widgets with the screen (reference width 1920) so they are
+# not a tiny sliver on 4K / hi-dpi panels, clamped to sane bounds.
+prog_scale = Window.GetMaxWidth() / 1920;
+if (prog_scale < 0.85)
+  prog_scale = 0.85;
+if (prog_scale > 3)
+  prog_scale = 3;
+
+progress_box.base  = Image("progress_box.png");
+progress_box.image = progress_box.base.Scale(progress_box.base.GetWidth() * prog_scale, progress_box.base.GetHeight() * prog_scale);
+progress_box.sprite = Sprite(progress_box.image);
+
+progress_bar.base = Image("progress_bar.png");
+progress_bar.original_image = progress_bar.base.Scale(progress_bar.base.GetWidth() * prog_scale, progress_bar.base.GetHeight() * prog_scale);
+progress_bar.sprite = Sprite();
+
+# Anchor the bar a short gap below the centred logo, horizontally centred — so it
+# always tracks the logo above it.
+prog_top = logo.y + logo.image.GetHeight() + Window.GetMaxHeight() * 0.06;
+
+progress_box.x = Window.GetX() + (Window.GetMaxWidth() - progress_box.image.GetWidth()) / 2;
+progress_box.y = prog_top;
+progress_box.sprite.SetPosition(progress_box.x, progress_box.y, 0);
+
+progress_bar.x = Window.GetX() + (Window.GetMaxWidth() - progress_bar.original_image.GetWidth()) / 2;
+progress_bar.y = progress_box.y + (progress_box.image.GetHeight() - progress_bar.original_image.GetHeight()) / 2;
+progress_bar.sprite.SetPosition(progress_bar.x, progress_bar.y, 1);
+
+fun progress_callback (duration, progress)
+  {
+    if (progress_bar.image.GetWidth () != Math.Int (progress_bar.original_image.GetWidth () * progress))
+      {
+        progress_bar.image = progress_bar.original_image.Scale(progress_bar.original_image.GetWidth(progress_bar.original_image) * progress, progress_bar.original_image.GetHeight());
+        progress_bar.sprite.SetImage (progress_bar.image);
+      }
+  }
+
+Plymouth.SetBootProgressFunction(progress_callback);
+
+#----------------------------------------- Quit --------------------------------
+
+fun quit_callback ()
+{
+}
+
+Plymouth.SetQuitFunction(quit_callback);
+

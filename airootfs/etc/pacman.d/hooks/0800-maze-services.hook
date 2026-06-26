@@ -1,0 +1,17 @@
+# remove from airootfs!
+# Enable Maze Linux services and firewalld rules after all packages are
+# installed during the ISO build. Runs before zzzz99-remove-custom-hooks and is
+# itself removed from the final image by that hook.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = systemd
+
+[Action]
+Description = Enabling Maze Linux services...
+When = PostTransaction
+Depends = systemd
+Depends = bash
+Exec = /usr/local/share/maze/enable-services.sh

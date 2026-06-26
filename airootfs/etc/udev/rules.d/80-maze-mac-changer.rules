@@ -1,0 +1,12 @@
+# Maze — randomize the MAC of a network adapter that is plugged in at runtime.
+#
+# Fires mac-changer@<iface>.service for newly added physical NICs (wired or
+# wireless, incl. USB dongles). The unit carries a ConditionPathExists on the
+# boot marker, so this is a no-op during the boot-time coldplug (those
+# interfaces are handled in one pass by mac-changer.service) and only acts on
+# adapters hotplugged after the system is up. Virtual interfaces (lo, virbr,
+# veth, docker, tun…) are excluded by matching only physical name prefixes and
+# requiring a backing device.
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="en*|eth*|em*|wl*|wlan*|wlp*", \
+    DEVPATH!="*/virtual/*", TAG+="systemd", \
+    ENV{SYSTEMD_WANTS}+="mac-changer@$name.service"

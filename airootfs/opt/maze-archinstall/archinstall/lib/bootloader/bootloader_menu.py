@@ -1,0 +1,319 @@
+import textwrap
+from typing import override
+
+from archinstall.lib.menu.abstract_menu import AbstractSubMenu
+from archinstall.lib.menu.helpers import Confirmation, Selection
+from archinstall.lib.models.bootloader import Bootloader, BootloaderConfiguration, PlymouthTheme
+from archinstall.lib.translationhandler import tr
+from archinstall.tui.menu_item import MenuItem, MenuItemGroup
+from archinstall.tui.result import ResultType
+
+
+class BootloaderMenu(AbstractSubMenu[BootloaderConfiguration]):
+	def __init__(
+		self,
+		bootloader_conf: BootloaderConfiguration,
+		uefi: bool,
+		skip_boot: bool = False,
+	):
+		self._bootloader_conf = bootloader_conf
+		self._skip_boot = skip_boot
+		self._uefi = uefi
+		menu_options = self._define_menu_options()
+
+		self._item_group = MenuItemGroup(menu_options, sort_items=False, checkmarks=True)
+		super().__init__(
+			self._item_group,
+			config=self._bootloader_conf,
+			allow_reset=False,
+		)
+
+	def _define_menu_options(self) -> list[MenuItem]:
+		bootloader = self._bootloader_conf.bootloader
+
+		# UKI availability
+		uki_enabled = self._uefi and bootloader.has_uki_support()
+		if not uki_enabled:
+			self._bootloader_conf.uki = False
+
+		# Removable availability
+		removable_enabled = self._uefi and bootloader.has_removable_support()
+		if not removable_enabled:
+			self._bootloader_conf.removable = False
+
+		# Secure Boot availability (Microsoft-signed shim + MOK chain, UEFI only)
+		secure_boot_enabled = self._uefi and bootloader.has_secure_boot_support()
+		if not secure_boot_enabled:
+			self._bootloader_conf.secure_boot = False
+
+		return [
+			MenuItem(
+				text=tr('Bootloader'),
+				action=self._select_bootloader,
+				value=self._bootloader_conf.bootloader,
+				preview_action=self._prev_bootloader,
+				mandatory=True,
+				key='bootloader',
+			),
+			MenuItem(
+				text=tr('Unified kernel images'),
+				action=self._select_uki,
+				value=self._bootloader_conf.uki,
+				preview_action=self._prev_uki,
+				key='uki',
+				enabled=uki_enabled,
+			),
+			MenuItem(
+				text=tr('Install to removable location'),
+				action=self._select_removable,
+				value=self._bootloader_conf.removable,
+				preview_action=self._prev_removable,
+				key='removable',
+				enabled=removable_enabled,
+			),
+			MenuItem(
+				text=tr('Secure Boot'),
+				action=self._select_secure_boot,
+				value=self._bootloader_conf.secure_boot,
+				preview_action=self._prev_secure_boot,
+				key='secure_boot',
+				enabled=secure_boot_enabled,
+			),
+			MenuItem(
+				text=tr('Plymouth'),
+				action=self._select_plymouth,
+				value=self._bootloader_conf.plymouth,
+				preview_action=self._prev_plymouth,
+				key='plymouth',
+			),
+		]
+
+	def _prev_bootloader(self, item: MenuItem) -> str | None:
+		if item.value:
+			return f'{tr("Bootloader")}: {item.value.value}'
+		return None
+
+	def _prev_uki(self, item: MenuItem) -> str | None:
+		uki_text = f'{tr("Unified kernel images")}'
+		if item.value:
+			return f'{uki_text}: {tr("Enabled")}'
+		else:
+			return f'{uki_text}: {tr("Disabled")}'
+
+	def _prev_removable(self, item: MenuItem) -> str | None:
+		if item.value:
+			return tr('Will install to /EFI/BOOT/ (removable location, safe default)')
+		return tr('Will install to custom location with NVRAM entry')
+
+	def _prev_secure_boot(self, item: MenuItem) -> str | None:
+		secure_boot_text = f'{tr("Secure Boot")}'
+		if item.value:
+			return (
+				f'{secure_boot_text}: {tr("Enabled")}\n\n'
+				+ tr('Installs a Microsoft-signed shim and signs the bootloader and kernel with a')
+				+ '\n'
+				+ tr('per-machine key. On the first boot you will be asked once to enroll the Maze')
+				+ '\n'
+				+ tr('key (MOK); factory/Windows keys are kept. Works with UEFI Secure Boot enabled.')
+			)
+		return f'{secure_boot_text}: {tr("Disabled")}'
+
+	def _prev_plymouth(self, item: MenuItem) -> str | None:
+		if item.value:
+			return f'{tr("Plymouth")}: {item.value.value}'
+		return None
+
+	@override
+	async def show(self) -> BootloaderConfiguration:
+		_ = await super().show()
+		return self._bootloader_conf
+
+	async def _select_bootloader(self, preset: Bootloader | None) -> Bootloader | None:
+		bootloader = await select_bootloader(preset, self._uefi, self._skip_boot)
+
+		if bootloader:
+			# Update UKI option based on bootloader
+			uki_item = self._menu_item_group.find_by_key('uki')
+			if not self._uefi or not bootloader.has_uki_support():
+				uki_item.enabled = False
+				uki_item.value = False
+				self._bootloader_conf.uki = False
+			else:
+				uki_item.enabled = True
+
+			# Update removable option based on bootloader
+			removable_item = self._menu_item_group.find_by_key('removable')
+			if not self._uefi or not bootloader.has_removable_support():
+				removable_item.enabled = False
+				removable_item.value = False
+				self._bootloader_conf.removable = False
+			else:
+				if not removable_item.enabled:
+					removable_item.value = True
+					self._bootloader_conf.removable = True
+				removable_item.enabled = True
+
+			# Update Secure Boot option based on bootloader
+			secure_boot_item = self._menu_item_group.find_by_key('secure_boot')
+			if not self._uefi or not bootloader.has_secure_boot_support():
+				secure_boot_item.enabled = False
+				secure_boot_item.value = False
+				self._bootloader_conf.secure_boot = False
+			else:
+				if not secure_boot_item.enabled:
+					# Re-enabling: default Secure Boot back on (the Maze default).
+					secure_boot_item.value = True
+					self._bootloader_conf.secure_boot = True
+				secure_boot_item.enabled = True
+
+		return bootloader
+
+	async def _select_plymouth(self, preset: PlymouthTheme | None) -> PlymouthTheme | None:
+		return await select_plymouth_theme(preset)
+
+	async def _select_uki(self, preset: bool) -> bool:
+		prompt = tr('Would you like to use unified kernel images?') + '\n'
+
+		result = await Confirmation(header=prompt, allow_skip=True, preset=preset).show()
+
+		match result.type_:
+			case ResultType.Skip:
+				return preset
+			case ResultType.Selection:
+				return result.item() == MenuItem.yes()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+
+	async def _select_secure_boot(self, preset: bool) -> bool:
+		prompt = (
+			tr('Would you like to enable UEFI Secure Boot support?')
+			+ '\n\n'
+			+ tr('Maze installs a Microsoft-signed shim and signs the bootloader and kernel with a')
+			+ '\n'
+			+ tr('per-machine key. On the first reboot you enroll the Maze key once (MOK); existing')
+			+ '\n'
+			+ tr('factory and Windows keys are preserved. Kernel updates are re-signed automatically.')
+			+ '\n'
+		)
+
+		result = await Confirmation(header=prompt, allow_skip=True, preset=preset).show()
+
+		match result.type_:
+			case ResultType.Skip:
+				return preset
+			case ResultType.Selection:
+				return result.item() == MenuItem.yes()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+
+	async def _select_removable(self, preset: bool) -> bool:
+		prompt = (
+			tr('Would you like to install the bootloader to the default removable media search location?')
+			+ '\n\n'
+			+ tr('This installs the bootloader to /EFI/BOOT/BOOTX64.EFI (or similar) which is useful for:')
+			+ '\n\n  • '
+			+ tr('Firmware that does not properly support NVRAM boot entries like most MSI motherboards,')
+			+ '\n	 '
+			+ tr('most Apple Macs, many laptops...')
+			+ '\n  • '
+			+ tr('USB drives or other portable external media.')
+			+ '\n  • '
+			+ tr('Systems where you want the disk to be bootable on any computer.')
+			+ '\n\n'
+			+ tr(
+				textwrap.dedent(
+					"""\
+					If you do not know what this means, LEAVE THIS OPTION ENABLED, as it is the safe default.
+
+					It is suggested to disable this if none of the above apply, as it makes installing multiple
+					EFI bootloaders on the same disk easier, and it will not overwrite whatever bootloader
+					was previously installed at the default removable media search location, if any.
+
+					It may also make the installation more resilient in case of dual-booting with Windows,
+					as Windows is known to sometimes erase or replace the bootloader installed at the removable
+					location.
+					"""
+				)
+			)
+			+ '\n'
+		)
+
+		result = await Confirmation(
+			header=prompt,
+			allow_skip=True,
+			preset=preset,
+		).show()
+
+		match result.type_:
+			case ResultType.Skip:
+				return preset
+			case ResultType.Selection:
+				return result.get_value()
+			case ResultType.Reset:
+				raise ValueError('Unhandled result type')
+
+
+async def select_bootloader(
+	preset: Bootloader | None,
+	uefi: bool,
+	skip_boot: bool = False,
+) -> Bootloader | None:
+	options = []
+	hidden_options = []
+	header = tr('Select bootloader to install')
+
+	default = Bootloader.get_default(uefi, skip_boot)
+
+	if not skip_boot:
+		hidden_options += [Bootloader.NO_BOOTLOADER]
+
+	if not uefi:
+		options += [Bootloader.Grub, Bootloader.Limine]
+		header += '\n' + tr('UEFI is not detected and some options are disabled')
+	else:
+		options += [b for b in Bootloader if b not in hidden_options]
+
+	items = [MenuItem(o.value, value=o) for o in options]
+	group = MenuItemGroup(items)
+	group.set_default_by_value(default)
+	group.set_focus_by_value(preset)
+
+	result = await Selection[Bootloader](
+		group,
+		header=header,
+		allow_skip=True,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Selection:
+			return result.get_value()
+		case ResultType.Reset:
+			raise ValueError('Unhandled result type')
+
+
+async def select_plymouth_theme(preset: PlymouthTheme | None = None) -> PlymouthTheme | None:
+	def _label(t: PlymouthTheme) -> str:
+		# Maze Linux: show a friendly name for the branded boot splash.
+		return 'Maze Linux' if t == PlymouthTheme.MAZE else t.value
+
+	items = [MenuItem(_label(t), value=t) for t in PlymouthTheme]
+	group = MenuItemGroup(items, sort_items=False)
+	# Default the selection to the Maze boot splash when nothing is preset yet.
+	group.set_focus_by_value(preset if preset is not None else PlymouthTheme.MAZE)
+
+	result = await Selection[PlymouthTheme](
+		group,
+		header=tr('Select Plymouth theme'),
+		allow_reset=True,
+		allow_skip=True,
+	).show()
+
+	match result.type_:
+		case ResultType.Skip:
+			return preset
+		case ResultType.Reset:
+			return None
+		case ResultType.Selection:
+			return PlymouthTheme(result.get_value())

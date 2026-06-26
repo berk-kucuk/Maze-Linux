@@ -1,0 +1,40 @@
+{
+    "policies": {
+        "DisableTelemetry": true,
+        "DisableFirefoxStudies": true,
+        "DisablePocket": true,
+        "DisableFirefoxAccounts": false,
+        "DisableDefaultBrowserAgent": true,
+        "DontCheckDefaultBrowser": true,
+        "NoDefaultBookmarks": false,
+        "OverrideFirstRunPage": "https://mazelinux.berkkucukk.com.tr",
+        "OverridePostUpdatePage": "",
+        "Homepage": {
+            "URL": "https://mazelinux.berkkucukk.com.tr",
+            "Locked": false,
+            "StartPage": "homepage"
+        },
+        "DNSOverHTTPS": {
+            "Enabled": true,
+            "Locked": false
+        },
+        "EnableTrackingProtection": {
+            "Value": true,
+            "Locked": false,
+            "Cryptomining": true,
+            "Fingerprinting": true
+        },
+        "FirefoxHome": {
+            "Search": true,
+            "TopSites": true,
+            "SponsoredTopSites": false,
+            "Pocket": false,
+            "SponsoredPocket": false,
+            "Snippets": false
+        },
+        "UserMessaging": {
+            "ExtensionRecommendations": false,
+            "SkipOnboarding": true
+        }
+    }
+}

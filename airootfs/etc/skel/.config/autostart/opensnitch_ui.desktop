@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=OpenSnitch
+GenericName=Application Firewall
+Comment=Interactive application firewall prompts
+Exec=opensnitch-ui
+Icon=opensnitch-ui
+Terminal=false
+Categories=System;Security;Network;
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+StartupNotify=false

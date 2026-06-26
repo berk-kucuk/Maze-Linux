@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Install Maze Linux
+GenericName=System Installer
+Comment=Install Maze Linux to disk
+Exec=mazeinstaller --gui
+Icon=/usr/share/pixmaps/maze-installer.png
+Terminal=false
+Categories=System;Settings;
+Keywords=install;installer;setup;archinstall;
+StartupNotify=true
+# Match the GUI's window app_id/WM_CLASS (set via QApplication.setDesktopFileName)
+# so the running installer groups under THIS launcher's dock icon instead of
+# appearing as a separate task.
+StartupWMClass=maze-install

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Install Maze Linux (Calamares)
+GenericName=System Installer
+Comment=Install Maze Linux to disk with the graphical installer
+Exec=maze-calamares
+Icon=/usr/share/pixmaps/maze-installer.png
+Terminal=false
+Categories=System;Settings;
+Keywords=install;installer;setup;calamares;
+StartupNotify=true
+StartupWMClass=calamares

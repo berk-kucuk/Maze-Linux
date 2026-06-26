@@ -1,0 +1,102 @@
+/* Maze Linux — Calamares stylesheet: dark-grey surface, off-white buttons. */
+
+#mainApp,
+QWidget {
+    background-color: #0e0e0e;
+    color: #f2f2f2;
+}
+
+/* Sidebar (step list) — a touch darker than the main surface for separation. */
+#sidebarApp {
+    background-color: #070707;
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
+#sidebarMenuApp {
+    background-color: #070707;
+}
+QWidget#sidebarApp QLabel {
+    color: #a8a8a8;
+}
+
+/* Headings / text */
+QLabel[text] {
+    color: #f2f2f2;
+}
+
+/* Buttons — soft OFF-WHITE (dirty white), not pure white, with dark text. */
+QPushButton {
+    background-color: #e6e6e6;
+    color: #1a1a1a;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: 700;
+}
+QPushButton:hover {
+    background-color: #d4d4d4;
+}
+QPushButton:pressed {
+    background-color: #c8c8c8;
+}
+QPushButton:disabled {
+    background-color: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.38);
+}
+
+/* Inputs — frosted-glass on the dark-grey surface. */
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit, QListView, QTreeView {
+    background-color: rgba(255,255,255,0.06);
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px;
+    padding: 6px 9px;
+    selection-background-color: #e6e6e6;
+    selection-color: #1a1a1a;
+}
+QLineEdit:focus, QComboBox:focus {
+    border: 1px solid #e6e6e6;
+}
+
+/* Drop-down POPUP list (e.g. the swap choice). Without this the items render as
+   near-white-on-white and are unreadable; give the popup a dark surface. */
+QComboBox QAbstractItemView {
+    background-color: #1a1a1a;
+    color: #f2f2f2;
+    border: 1px solid rgba(255,255,255,0.16);
+    selection-background-color: #e6e6e6;
+    selection-color: #1a1a1a;
+    outline: 0;
+}
+
+/* Checkboxes / radio buttons — were invisible on the dark surface. Draw a clear
+   bordered indicator; checked = filled off-white. */
+QCheckBox, QRadioButton {
+    color: #eaeaea;
+    spacing: 8px;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255,255,255,0.50);
+    background-color: rgba(255,255,255,0.06);
+}
+QCheckBox::indicator { border-radius: 4px; }
+QRadioButton::indicator { border-radius: 9px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #e6e6e6;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #e6e6e6;
+    border-color: #e6e6e6;
+}
+QProgressBar {
+    background-color: rgba(255,255,255,0.08);
+    border: none;
+    border-radius: 6px;
+    text-align: center;
+    color: #ffffff;
+}
+QProgressBar::chunk {
+    background-color: #e6e6e6;
+    border-radius: 6px;
+}

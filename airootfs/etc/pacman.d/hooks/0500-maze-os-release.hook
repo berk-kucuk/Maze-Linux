@@ -1,0 +1,18 @@
+# remove from airootfs!
+# Apply Maze Linux branding to os-release after the 'filesystem' package has
+# installed its own copy. Pre-placing /usr/lib/os-release in the airootfs
+# overlay would conflict with the 'filesystem' package during pacstrap, so we
+# stage the content at /usr/local/share/maze/os-release and copy it into place
+# here instead. Runs before zzzz99-remove-custom-hooks (alphabetical order).
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+
+[Action]
+Description = Applying Maze Linux branding to /usr/lib/os-release...
+When = PostTransaction
+Depends = coreutils
+Exec = /usr/bin/cp -f /usr/local/share/maze/os-release /usr/lib/os-release

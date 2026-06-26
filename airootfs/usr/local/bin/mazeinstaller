@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#
+# mazeinstaller — single entry point for the Maze Linux installer.
+#
+#   mazeinstaller --gui        Launch the modern Qt installer (maze-installer-gui).
+#                              This is what the dock / "Install Maze Linux" icon runs.
+#   mazeinstaller              Launch the terminal (TUI) installer.
+#   mazeinstaller --cli        Same as above, explicit.
+#   mazeinstaller <args...>    Anything else is forwarded to the engine
+#                              (e.g. mazeinstaller --advanced, --silent).
+#
+# The GUI runs as the normal desktop user (so it can reach the Wayland/X
+# session) and elevates only its privileged steps with sudo. The CLI path is the
+# unchanged `maze-install` wrapper around our archinstall fork.
+#
+set -u
+
+case "${1:-}" in
+    --gui)
+        shift
+        exec maze-installer-gui "$@"
+        ;;
+    --cli|--tui)
+        shift
+        exec maze-install "$@"
+        ;;
+    *)
+        # No args -> interactive TUI; any other args are forwarded verbatim.
+        exec maze-install "$@"
+        ;;
+esac

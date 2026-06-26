@@ -1,0 +1,12 @@
+NAME="Maze Linux"
+PRETTY_NAME="Maze Linux"
+ID=mazelinux
+ID_LIKE=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;120;80;220"
+HOME_URL="https://mazelinux.berkkucukk.com.tr"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://mazelinux.berkkucukk.com.tr"
+BUG_REPORT_URL="https://mazelinux.berkkucukk.com.tr"
+PRIVACY_POLICY_URL="https://mazelinux.berkkucukk.com.tr"
+LOGO=mazelinux

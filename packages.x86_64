@@ -1,0 +1,313 @@
+alsa-utils
+amd-ucode
+arch-install-scripts
+archinstall
+b43-fwcutter
+base
+bcachefs-tools
+bind
+bolt
+brltty
+broadcom-wl
+btrfs-progs
+clonezilla
+cloud-init
+cryptsetup
+darkhttpd
+ddrescue
+dhcpcd
+diffutils
+dmidecode
+dmraid
+dnsmasq
+dosfstools
+e2fsprogs
+edk2-shell
+efibootmgr
+efitools
+espeakup
+# sbsigntools — provides sbsign/sbverify used by maze-sb-sign to sign the
+# bootloader + kernels for Secure Boot. MUST be in the live image so the OFFLINE
+# (unpackfs) Calamares install can sign on the target without network.
+sbsigntools
+ethtool
+exfatprogs
+f2fs-tools
+fatresize
+foot-terminfo
+fsarchiver
+gpart
+gpm
+gptfdisk
+grml-zsh-config
+grub
+hdparm
+hyperv
+intel-ucode
+irssi
+iw
+iwd
+jfsutils
+kitty-terminfo
+ldns
+less
+lftp
+libfido2
+libusb-compat
+linux
+linux-headers
+linux-atm
+linux-firmware
+linux-firmware-marvell
+livecd-sounds
+lsscsi
+lvm2
+lynx
+man-db
+man-pages
+mc
+mdadm
+memtest86+
+memtest86+-efi
+mkinitcpio
+mkinitcpio-archiso
+mkinitcpio-nfs-utils
+mmc-utils
+modemmanager
+mokutil
+mtools
+nano
+nbd
+ndisc6
+nfs-utils
+nilfs-utils
+nmap
+ntfs-3g
+nvme-cli
+open-iscsi
+open-vm-tools
+openconnect
+openpgp-card-tools
+openssh
+openvpn
+partclone
+parted
+partimage
+pcsclite
+plymouth
+ppp
+pptpclient
+pv
+qemu-guest-agent
+refind
+reflector
+rsync
+rxvt-unicode-terminfo
+screen
+sdparm
+sequoia-sq
+sg3_utils
+smartmontools
+sof-firmware
+squashfs-tools
+sudo
+syslinux
+systemd-resolvconf
+tcpdump
+terminus-font
+testdisk
+tmux
+tpm2-tools
+tpm2-tss
+udftools
+usb_modeswitch
+usbmuxd
+usbutils
+vim
+virtualbox-guest-utils-nox
+vpnc
+wireless-regdb
+wireless_tools
+wpa_supplicant
+wvdial
+xdg-utils
+xfsprogs
+xl2tpd
+zsh
+
+# --- Maze Linux: KDE Plasma (Wayland) desktop ---
+plasma-meta
+sddm
+# sddm-kcm — the "Login Screen (SDDM)" module in KDE System Settings (lets the
+# user pick/configure the SDDM theme; was missing so Settings had no SDDM entry).
+sddm-kcm
+# Core KDE applications
+konsole
+# yakuake — drop-down terminal (autostarts in the background, toggle with F12).
+# Skel ships the 'monochrome' skin + yakuakerc + the F12 global shortcut.
+yakuake
+dolphin
+dolphin-plugins
+ark
+kate
+gwenview
+okular
+kcalc
+kfind
+kwalletmanager
+filelight
+partitionmanager
+kdeconnect
+# Web browser, email & media
+firefox
+thunderbird
+vlc
+# Audio (PipeWire)
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-jack
+wireplumber
+# Networking
+networkmanager
+# Wayland / Qt
+qt6-wayland
+xorg-xwayland
+# Graphics drivers (Vulkan + VA-API; mesa provides libva-mesa-driver)
+mesa
+vulkan-intel
+vulkan-radeon
+vulkan-nouveau
+vulkan-swrast
+vulkan-mesa-layers
+intel-media-driver
+# Fonts
+noto-fonts
+noto-fonts-emoji
+noto-fonts-cjk
+ttf-dejavu
+ttf-liberation
+# Desktop integration
+pciutils
+xdg-user-dirs
+xdg-desktop-portal
+power-profiles-daemon
+bluez
+bluez-utils
+cups
+# Widgets used by the custom panel layout
+lm_sensors
+kclock
+kdeplasma-addons
+# Multimedia codecs
+gst-plugins-good
+gst-plugins-bad
+gst-plugins-ugly
+gst-libav
+ffmpeg
+
+# --- Maze Linux: Maze's own applications (pulled from the [mazelinux] repo) ---
+# These are published in the official Maze repository (see pacman.conf), so
+# mkarchiso installs them straight from [mazelinux] — they are no longer built
+# locally from the AUR by tools/build-aur.sh.
+entropy-shield
+qlam
+maze
+hazedrop
+haze
+linux-chan-ai
+sentinai
+# Microsoft-signed shim (prebuilt by build-aur.sh into ./localrepo). Lives in the live system so build.sh can read
+# /usr/share/shim-signed/{shimx64,mmx64}.efi for the ISO ESP, and so the installer
+# can copy it onto the target ESP (it is AUR, not installable from official repos).
+shim-signed
+# base-devel + git so makepkg can build further AUR packages on the installed system
+base-devel
+git
+
+# === Maze Linux: full security/privacy/AI desktop (official repos) ===
+# Security & privacy
+tor
+torbrowser-launcher
+onionshare
+wireguard-tools
+openvpn
+clamav
+clamtk
+firewalld
+fail2ban
+apparmor
+audit
+lynis
+rkhunter
+macchanger
+libnotify
+# usbguard — backs the USB kill switch in Maze Hardware (block NEW USB devices
+# while keeping the ones currently plugged in working).
+usbguard
+aircrack-ng
+wireshark-qt
+openbsd-netcat
+opensnitch
+# AI
+ollama
+# Virtualization
+qemu-full
+libvirt
+virt-manager
+edk2-ovmf
+vde2
+dnsmasq
+# Desktop apps & utilities
+discord
+bitwarden
+btop
+fastfetch
+bash-completion
+wget
+unzip
+unrar
+distrobox
+filezilla
+smartmontools
+ethtool
+xsensors
+acpi
+acpid
+network-manager-applet
+ttf-nerd-fonts-symbols
+isoimagewriter
+btrfs-assistant
+python-pip
+python-setuptools
+flatpak
+fwupd
+# Compressed RAM swap (configured via /etc/systemd/zram-generator.conf)
+zram-generator
+# Qt6/PySide6 for the Maze welcome app
+pyside6
+
+spotify-launcher
+proton-vpn-gtk-app
+# Gaming (multilib — enabled in pacman.conf)
+steam
+
+# === Maze Linux: optional AUR apps (auto-managed by tools/build-aur.sh) ===
+# If one of these fails to build, build-aur.sh comments it out (#MAZE-SKIP#)
+# so the ISO build does not break. Do not hand-edit the #MAZE-SKIP# markers.
+brave-origin-bin
+upscayl-bin
+session-desktop-bin
+joplin-bin
+claude-code
+# Calamares graphical installer (live ISO only). Built from the AUR by
+# build-aur.sh; Maze's own config + branding live in airootfs/etc/calamares and
+# airootfs/usr/share/calamares/branding/maze.
+calamares
+# xhost — the maze-calamares launcher uses it to let root reach the live user's
+# XWayland server (official repo; NOT auto-pulled by calamares).
+xorg-xhost
+# onlyoffice-bin is intentionally NOT shipped in the live ISO: it unpacks to
+# ~1.3 GB and bloats the image. It is still installed on the INSTALLED system by
+# deploy-to-target.sh (CURATED_AUR) / maze-aur-setup, built fresh from the AUR.
+

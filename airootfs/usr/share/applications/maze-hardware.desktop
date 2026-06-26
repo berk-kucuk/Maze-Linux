@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Maze Hardware
+GenericName=Hardware privacy controller
+Comment=Kernel-level kill switches for webcam, microphone, Bluetooth, Wi-Fi and USB
+Exec=/usr/local/bin/maze-hardware
+Icon=/usr/share/pixmaps/maze-hardware.svg
+Terminal=false
+Categories=System;Settings;Security;
+Keywords=privacy;killswitch;webcam;microphone;bluetooth;wifi;usb;hardware;

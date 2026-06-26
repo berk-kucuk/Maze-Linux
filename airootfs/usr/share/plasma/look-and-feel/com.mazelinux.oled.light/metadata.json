@@ -1,0 +1,16 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Maze Linux"
+            }
+        ],
+        "Description": "Maze Linux light global theme (Breeze + Maze Light colours + Maze splash)",
+        "Id": "com.mazelinux.oled.light",
+        "License": "MIT",
+        "Name": "Maze Light",
+        "Version": "1.0",
+        "Website": "https://mazelinux.berkkucukk.com.tr"
+    }
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=MAC Address Randomizer for hotplugged adapter %I
+# Started by the udev rule (80-maze-mac-changer.rules) when a new network
+# adapter appears. The condition keeps it from firing during the boot-time
+# coldplug: the marker is created by mac-changer.service AFTER it has already
+# randomized every interface present at boot, so this only runs for adapters
+# plugged in later — and only for the single adapter %I.
+ConditionPathExists=/run/maze/mac-changer.booted
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/mkdir -p /var/log/mac-changer
+ExecStart=/usr/local/bin/mac_anonymizer.py %I
+StandardOutput=append:/var/log/mac-changer/mac-changer.log
+StandardError=append:/var/log/mac-changer/mac-changer.log

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Maze Primary Screen
+Comment=Promote the best monitor to primary on first login (runs once, then leaves your Display choices alone)
+Exec=maze-primary-screen
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;
+StartupNotify=false

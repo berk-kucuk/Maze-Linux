@@ -1,0 +1,245 @@
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import NotRequired, Self, TypedDict, override
+
+from archinstall.lib.log import debug
+from archinstall.lib.models.config import SubConfig
+from archinstall.lib.translationhandler import tr
+
+
+class NicType(Enum):
+	ISO = 'iso'
+	NM = 'nm'
+	NM_IWD = 'nm_iwd'
+	IWD = 'iwd'
+	MANUAL = 'manual'
+
+	def display_msg(self) -> str:
+		match self:
+			case NicType.ISO:
+				return tr('Copy ISO network configuration to installation')
+			case NicType.NM:
+				return tr('Use Network Manager (default backend)')
+			case NicType.NM_IWD:
+				return tr('Use Network Manager (iwd backend)')
+			case NicType.IWD:
+				return tr('Use standalone iwd')
+			case NicType.MANUAL:
+				return tr('Manual configuration')
+
+
+class _NicSerialization(TypedDict):
+	iface: str | None
+	ip: str | None
+	dhcp: bool
+	gateway: str | None
+	dns: list[str]
+
+
+@dataclass
+class Nic:
+	iface: str | None = None
+	ip: str | None = None
+	dhcp: bool = True
+	gateway: str | None = None
+	dns: list[str] = field(default_factory=list)
+
+	def table_data(self) -> dict[str, str | bool | list[str]]:
+		return {
+			'iface': self.iface if self.iface else '',
+			'ip': self.ip if self.ip else '',
+			'dhcp': self.dhcp,
+			'gateway': self.gateway if self.gateway else '',
+			'dns': self.dns,
+		}
+
+	def json(self) -> _NicSerialization:
+		return {
+			'iface': self.iface,
+			'ip': self.ip,
+			'dhcp': self.dhcp,
+			'gateway': self.gateway,
+			'dns': self.dns,
+		}
+
+	@classmethod
+	def parse_arg(cls, arg: _NicSerialization) -> Self:
+		return cls(
+			iface=arg.get('iface', None),
+			ip=arg.get('ip', None),
+			dhcp=arg.get('dhcp', True),
+			gateway=arg.get('gateway', None),
+			dns=arg.get('dns', []),
+		)
+
+	def as_systemd_config(self) -> str:
+		match: list[tuple[str, str]] = []
+		network: list[tuple[str, str]] = []
+
+		if self.iface:
+			match.append(('Name', self.iface))
+
+		if self.dhcp:
+			network.append(('DHCP', 'yes'))
+		else:
+			if self.ip:
+				network.append(('Address', self.ip))
+			if self.gateway:
+				network.append(('Gateway', self.gateway))
+			for dns in self.dns:
+				network.append(('DNS', dns))
+
+		config = {'Match': match, 'Network': network}
+
+		config_str = ''
+		for top, entries in config.items():
+			config_str += f'[{top}]\n'
+			config_str += '\n'.join(f'{k}={v}' for k, v in entries)
+			config_str += '\n\n'
+
+		return config_str
+
+
+class _NetworkConfigurationSerialization(TypedDict):
+	type: str
+	nics: NotRequired[list[_NicSerialization]]
+
+
+@dataclass
+class NetworkConfiguration(SubConfig):
+	type: NicType
+	nics: list[Nic] = field(default_factory=list)
+
+	@override
+	def json(self) -> _NetworkConfigurationSerialization:
+		config: _NetworkConfigurationSerialization = {'type': self.type.value}
+		if self.nics:
+			config['nics'] = [n.json() for n in self.nics]
+
+		return config
+
+	@override
+	def summary(self) -> str:
+		return self.type.display_msg()
+
+	@classmethod
+	def parse_arg(cls, config: _NetworkConfigurationSerialization) -> Self | None:
+		nic_type = config.get('type', None)
+		if not nic_type:
+			return None
+
+		match NicType(nic_type):
+			case NicType.ISO:
+				return cls(NicType.ISO)
+			case NicType.NM:
+				return cls(NicType.NM)
+			case NicType.NM_IWD:
+				return cls(NicType.NM_IWD)
+			case NicType.IWD:
+				return cls(NicType.IWD)
+			case NicType.MANUAL:
+				nics_arg = config.get('nics', [])
+				if nics_arg:
+					nics = [Nic.parse_arg(n) for n in nics_arg]
+					return cls(NicType.MANUAL, nics)
+
+		return None
+
+
+@dataclass
+class WifiNetwork:
+	bssid: str
+	frequency: str
+	signal_level: str
+	flags: str
+	ssid: str
+
+	@override
+	def __hash__(self) -> int:
+		return hash((self.bssid, self.frequency, self.signal_level, self.flags, self.ssid))
+
+	def table_data(self) -> dict[str, str | int]:
+		"""Format WiFi data for table display"""
+		return {
+			'SSID': self.ssid,
+			'Signal': f'{self.signal_level} dBm',
+			'Frequency': f'{self.frequency} MHz',
+			'Security': self.flags,
+			'BSSID': self.bssid,
+		}
+
+	@classmethod
+	def from_wpa(cls, results: str) -> list[Self]:
+		entries = []
+
+		for line in results.splitlines():
+			line = line.strip()
+			if not line:
+				continue
+
+			parts = line.split()
+			if len(parts) != 5:
+				continue
+
+			wifi = cls(bssid=parts[0], frequency=parts[1], signal_level=parts[2], flags=parts[3], ssid=parts[4])
+			entries.append(wifi)
+
+		return entries
+
+
+@dataclass
+class WifiConfiguredNetwork:
+	network_id: int
+	ssid: str
+	bssid: str
+	flags: list[str]
+
+	@classmethod
+	def from_wpa_cli_output(cls, list_networks: str) -> list[Self]:
+		"""
+		Example output from 'wpa_cli list_networks'
+
+		Selected interface 'wlan0'
+		network id / ssid / bssid / flags
+		0	WifiGuest any	[CURRENT]
+		1		any [DISABLED]
+		2		any [DISABLED]
+		"""
+
+		lines = list_networks.strip().splitlines()
+		lines = lines[1:]  # remove the header row from the wpa_cli output
+
+		networks = []
+
+		for line in lines:
+			line = line.strip()
+			parts = line.split('\t')
+
+			if len(parts) < 3:
+				continue
+
+			try:
+				# flags = cls._extract_flags(parts[3])
+				flags: list[str] = []
+
+				networks.append(
+					cls(
+						network_id=int(parts[0]),
+						ssid=parts[1],
+						bssid=parts[2],
+						flags=flags,
+					)
+				)
+			except ValueError, IndexError:
+				debug('Parsing error for network output')
+
+		return networks
+
+	@staticmethod
+	def _extract_flags(flag_string: str) -> list[str]:
+		pattern = r'\[([^\]]+)\]'
+
+		extracted_values = re.findall(pattern, flag_string)
+
+		return extracted_values
