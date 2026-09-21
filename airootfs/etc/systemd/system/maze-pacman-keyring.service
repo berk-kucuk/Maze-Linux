@@ -1,0 +1,25 @@
+[Unit]
+Description=Maze Linux - initialize pacman keyring if missing
+# Boot-time BACKSTOP for the installed system. The Calamares deploy step
+# (deploy-to-target.sh, final keyring step) normally initialises and populates
+# /etc/pacman.d/gnupg in the target chroot; if that ever fails (or the keyring
+# is wiped), this unit rebuilds it on the next boot so pacman is never left
+# unusable ("required key missing from keyring").
+#
+# Condition-gated: a populated keyring has a pubring.gpg, so on a healthy
+# system this is a zero-cost no-op every boot. NOT enabled on the live ISO
+# (no wants symlink in the airootfs) — the live medium uses archiso's own
+# pacman-init.service + tmpfs mount instead. deploy-to-target.sh enables it
+# on the target only.
+ConditionPathExists=!/etc/pacman.d/gnupg/pubring.gpg
+Before=archlinux-keyring-wkd-sync.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=15min
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate
+
+[Install]
+WantedBy=multi-user.target

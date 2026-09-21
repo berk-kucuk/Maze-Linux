@@ -1,0 +1,3 @@
+Maze Linux: Arch, hardened, UEFI-only, signed kernel, nothing leaves the machine.
+When a device on your network attacks you, it tells you which one — MAC, vendor, IP, what it tried — not "something was blocked".
+mazelinux.berkkucukk.com.tr

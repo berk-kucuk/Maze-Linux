@@ -13,7 +13,17 @@ USERNAME="maze"
 FULLNAME="Maze Live User"
 
 if ! getent passwd "${USERNAME}" >/dev/null; then
-    useradd --create-home --uid 1000 --user-group \
+    # The 'maze' application package ships a sysusers.d entry (`g maze -`) that
+    # may already have created a SYSTEM group named 'maze'. In that case
+    # `useradd --user-group` fails ("group maze exists") and the live user is
+    # never created → SDDM has no account to autologin. So reuse the existing
+    # group as the primary group when present, otherwise create a private one.
+    if getent group "${USERNAME}" >/dev/null; then
+        group_opt=(--gid "${USERNAME}")     # reuse existing 'maze' group
+    else
+        group_opt=(--user-group)            # create a private 'maze' group
+    fi
+    useradd --create-home --uid 1000 "${group_opt[@]}" \
         --groups wheel \
         --shell /usr/bin/zsh \
         --comment "${FULLNAME}" \
@@ -29,6 +39,16 @@ done
 # /etc/skel/.zshrc because that path is owned by grml-zsh-config (file conflict).
 if [[ -f /usr/local/share/maze/skel-zshrc ]]; then
     cp -f /usr/local/share/maze/skel-zshrc "/home/${USERNAME}/.zshrc"
+fi
+
+# Pin "Install Maze Linux" to the LIVE user's dock. The pin lives here, not in
+# maze-plasma-config's /etc/skel: a skel pin is a package file, and the sed that
+# deploy-to-target.sh applied to strip it on the installed system was undone by
+# the next upgrade of that package (real machine, 10 Sep 2026). useradd has just
+# seeded the home from skel, so patch the copy the live session will read.
+LIVE_APPLETSRC="/home/${USERNAME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+if [[ -f "${LIVE_APPLETSRC}" ]] && ! grep -q 'applications:maze-calamares.desktop' "${LIVE_APPLETSRC}"; then
+    sed -i -E 's#^(launchers=)#\1applications:maze-calamares.desktop,#' "${LIVE_APPLETSRC}"
 fi
 
 # Passwordless live account (autologin + no password prompt on the console).

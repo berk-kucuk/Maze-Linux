@@ -26,6 +26,11 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME="maze-build-backup-$(date +%Y%m%d-%H%M)"
 DEST_DIR="${1:-$SRC_DIR}"
 ARCHIVE="$DEST_DIR/$NAME.tar.zst"
+# tar, hedef SRC_DIR'in icindeyse arsiv dosyasi olusup buyudukce "."
+# dizininin mtime'i degisir ve GNU tar "file changed as we read it"
+# uyarisi verir. Bunu onlemek icin once SRC_DIR disinda gecici bir
+# dosyaya yazip sonunda gercek hedefe tasiyoruz.
+TMP_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/$NAME.tar.zst.XXXXXX")"
 
 # Yedege DAHIL EDILMEYECEK desenler (tar --exclude sozdizimi).
 EXCLUDES=(
@@ -67,12 +72,20 @@ echo
 
 # --- Yedekleme -------------------------------------------------------------
 # -C ile dizine gir, "." arsivler. zstd -19 -T0: cok cekirdekli yuksek sikistirma.
+# Once SRC_DIR disindaki gecici dosyaya yaziyoruz (bkz. yukaridaki not),
+# sonra hedef konuma tasiyoruz.
+cleanup() { rm -f "$TMP_ARCHIVE"; }
+trap cleanup EXIT
+
 tar --zstd \
     "${EXCLUDE_ARGS[@]}" \
-    -cf "$ARCHIVE" \
+    -cf "$TMP_ARCHIVE" \
     -C "$SRC_DIR" \
     --exclude="./$NAME.tar.zst" \
     .
+
+mv "$TMP_ARCHIVE" "$ARCHIVE"
+trap - EXIT
 
 echo
 echo ">> Tamamlandi."

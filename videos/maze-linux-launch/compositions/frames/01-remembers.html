@@ -1,0 +1,172 @@
+<template>
+  <style>
+    @font-face {
+      font-family: "JetBrains Mono";
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/JetBrainsMono-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      font-weight: 500;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/JetBrainsMono-500.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      font-weight: 600;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/JetBrainsMono-600.woff2") format("woff2");
+    }
+
+    /* Root: styled via #root only (never a class on the composition element). */
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "JetBrains Mono", monospace;
+      color: #FFFFFF;
+    }
+
+    .clip {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* Track 0 — full-bleed ink-black ground (OLED black, never lifted). */
+    #f01-remembers-ground {
+      background: #000000;
+    }
+
+    /* Track 1 — back plane wrapper: receives the camera push-in (GSAP scale). */
+    #f01-remembers-plane-back {
+      transform-origin: 50% 50%;
+    }
+
+    /* Two-plane depth model: back plane blur(8px) + scale(1.04) at 35% (static CSS,
+       never GSAP-animated — the drift lives on the child grid, the camera on the parent). */
+    .f01-remembers-back {
+      position: absolute;
+      inset: 0;
+      filter: blur(8px);
+      transform: scale(1.04);
+      transform-origin: 50% 50%;
+      opacity: 0.35;
+    }
+
+    /* The drifting grid: 1px border-dark hairlines on 154px cells. Left/top sit at
+       −2 cells so the lines land on canvas multiples of 154px at offset (0,0). */
+    #f01-remembers-grid {
+      position: absolute;
+      left: -308px;
+      top: -308px;
+      width: 2536px;
+      height: 1696px;
+      background-image:
+        linear-gradient(#1A2022 1px, transparent 1px),
+        linear-gradient(90deg, #1A2022 1px, transparent 1px);
+      background-size: 154px 154px;
+      background-position: 0 0;
+    }
+
+    /* Track 2 — front plane: crisp, receives the same camera push-in. */
+    #f01-remembers-plane-front {
+      transform-origin: 50% 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* quote-text role: 3.8cqw / 400 / 1.15 / −0.02em, cream, sentence case. */
+    .f01-remembers-line {
+      font-size: 3.8cqw;
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      text-align: center;
+      max-width: 60cqw;
+    }
+
+    .f01-remembers-row {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .f01-remembers-word {
+      display: inline-block;
+      will-change: transform, opacity;
+    }
+  </style>
+
+  <div id="root" data-composition-id="01-remembers" data-width="1920" data-height="1080">
+    <!-- Ground -->
+    <div id="f01-remembers-ground" class="clip" data-start="0" data-duration="3.2" data-track-index="0"></div>
+
+    <!-- Back plane: blurred drifting grid -->
+    <div id="f01-remembers-plane-back" class="clip" data-start="0" data-duration="3.2" data-track-index="1">
+      <div class="f01-remembers-back">
+        <div id="f01-remembers-grid"></div>
+      </div>
+    </div>
+
+    <!-- Front plane: the statement -->
+    <div id="f01-remembers-plane-front" class="clip" data-start="0" data-duration="3.2" data-track-index="2">
+      <div class="f01-remembers-line">
+        <span class="f01-remembers-row"><span id="f01-remembers-w1" class="f01-remembers-word">Your</span> <span id="f01-remembers-w2" class="f01-remembers-word">machine</span></span>
+        <span class="f01-remembers-row"><span id="f01-remembers-w3" class="f01-remembers-word">remembers</span> <span id="f01-remembers-w4" class="f01-remembers-word">everything.</span></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var D = 3.2;
+      var tl = gsap.timeline({ paused: true });
+
+      // Camera breath (multi-phase-camera, single-phase form): ONE push-in tween
+      // end-to-end, 1.00 -> 1.025, power3.inOut, on both planes so they stay locked.
+      // Scene 1 (0.0-0.6s) opens with this already under way.
+      tl.fromTo(
+        "#f01-remembers-plane-back",
+        { scale: 1 },
+        { scale: 1.025, duration: D, ease: "power3.inOut" },
+        0
+      );
+      tl.fromTo(
+        "#f01-remembers-plane-front",
+        { scale: 1 },
+        { scale: 1.025, duration: D, ease: "power3.inOut" },
+        0
+      );
+
+      // Grid drift: constant vector (-12px/s, -12px/s) as a finite translate tween.
+      // Linear by contract — handoff_out requires offset (-38,-38) at 3.2s with the
+      // same velocity carried into 02; an eased curve would stall at the seam.
+      tl.fromTo(
+        "#f01-remembers-grid",
+        { x: 0, y: 0 },
+        { x: -38.4, y: -38.4, duration: D, ease: "none" },
+        0
+      );
+
+      // Scene 2 (0.6-1.5s): waterfall-entry, brief-adapted — each word rises from
+      // 24px below with opacity 0 -> 1, 0.06s stagger, power3.out, settling by ~1.5s.
+      tl.fromTo("#f01-remembers-w1", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.72, ease: "power3.out", immediateRender: true }, 0.60);
+      tl.fromTo("#f01-remembers-w2", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.72, ease: "power3.out", immediateRender: true }, 0.66);
+      tl.fromTo("#f01-remembers-w3", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.72, ease: "power3.out", immediateRender: true }, 0.72);
+      tl.fromTo("#f01-remembers-w4", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.72, ease: "power3.out", immediateRender: true }, 0.78);
+
+      // Scene 3 (1.5-3.2s): held read — the line is still; only the camera breath
+      // and the grid drift (both already running to D) continue. No exit authored.
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["01-remembers"] = tl;
+    })();
+  </script>
+</template>

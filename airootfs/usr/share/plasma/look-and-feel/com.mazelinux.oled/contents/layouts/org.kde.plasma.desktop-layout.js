@@ -19,7 +19,7 @@ for (var i = 0; i < screenCount; ++i) {
     desktop.name = "Maze";
     desktop.wallpaperPlugin = "a2n.blur";
     desktop.currentConfigGroup = ["Wallpaper", "a2n.blur", "General"];
-    desktop.writeConfig("Image", "file:///usr/share/wallpapers/Maze/contents/images/3344x1882.png");
+    desktop.writeConfig("Image", "file:///usr/share/wallpapers/Maze/");
     desktop.writeConfig("ActiveBlur", true);
     desktop.writeConfig("BlurRadius", 50);
     desktop.writeConfig("AnimationDuration", 250);

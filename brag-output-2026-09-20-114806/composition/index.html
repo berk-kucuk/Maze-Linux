@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Maze Linux — brag v2</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Hack"; src: url("assets/fonts/Hack-Regular.ttf") format("truetype"); font-weight: 400; }
+      @font-face { font-family: "Hack"; src: url("assets/fonts/Hack-Bold.ttf") format("truetype"); font-weight: 700; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000000; }
+      #root {
+        position: relative; width: 100%; height: 100%;
+        background: #000000; color: #e6e6e6;
+        font-family: "Hack", "DejaVu Sans Mono", monospace;
+        font-size: 36px; line-height: 1.6;
+      }
+      .clip { position: absolute; inset: 0; }
+      .fade { position: absolute; inset: 0; }
+      .center {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        text-align: center;
+      }
+      .hidden0 { opacity: 0; }
+      .k { color: #22d3ee; }
+      .d { color: #8c8c8c; }
+      .w { color: #ffffff; }
+
+      .hook { font-size: 58px; color: #e6e6e6; white-space: nowrap; }
+      .logo { display: block; width: 240px; height: 240px; }
+      .url { font-size: 32px; color: #22d3ee; margin-top: 44px; }
+
+      .term { padding: 120px 0 0 140px; }
+      .ln { display: block; white-space: pre; }
+      .hdr { color: #8c8c8c; margin-bottom: 0.4em; }
+
+      .title { font-size: 68px; font-weight: 700; color: #ffffff; white-space: nowrap; line-height: 1.2; }
+      .desc  { font-size: 34px; color: #8c8c8c; white-space: nowrap; margin-top: 26px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="28.5" data-width="1920" data-height="1080">
+
+      <!-- 1. hook → logo -->
+      <section id="hook" class="clip" data-start="0" data-duration="4.5" data-track-index="1">
+        <div class="center"><p id="hook-line" class="hook hidden0">Your machine remembers everything.</p></div>
+        <div id="hook-logo" class="center hidden0"><img class="logo" src="assets/logo.png" alt="" /></div>
+      </section>
+
+      <!-- 2. base -->
+      <section id="base" class="clip" data-start="4.5" data-duration="5" data-track-index="2">
+        <div id="base-fade" class="fade">
+          <div class="term">
+            <span id="base-hdr" class="ln hdr hidden0">base</span>
+            <span id="base-0" class="ln hidden0"><span class="w">LUKS2        </span>full-disk encryption</span>
+            <span id="base-1" class="ln hidden0"><span class="w">Secure Boot  </span>signed Unified Kernel Image</span>
+            <span id="base-2" class="ln hidden0"><span class="w">nftables     </span>network layer</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. features -->
+      <section id="feat-0" class="clip" data-start="9.5" data-duration="2.6" data-track-index="3">
+        <div id="feat-0-fade" class="center">
+          <p id="feat-0-title" class="title hidden0">Panic Mode</p>
+          <p id="feat-0-desc" class="desc hidden0">kill network · wipe RAM · lock screen</p>
+        </div>
+      </section>
+      <section id="feat-1" class="clip" data-start="12.1" data-duration="2.6" data-track-index="4">
+        <div id="feat-1-fade" class="center">
+          <p id="feat-1-title" class="title hidden0">Forensics Mode</p>
+          <p id="feat-1-desc" class="desc hidden0">RAM-only boot · nothing written to disk</p>
+        </div>
+      </section>
+      <section id="feat-2" class="clip" data-start="14.7" data-duration="2.6" data-track-index="5">
+        <div id="feat-2-fade" class="center">
+          <p id="feat-2-title" class="title hidden0">Deception Technology</p>
+          <p id="feat-2-desc" class="desc hidden0">honeypot tripped → alarm, lockdown</p>
+        </div>
+      </section>
+      <section id="feat-3" class="clip" data-start="17.3" data-duration="2.6" data-track-index="6">
+        <div id="feat-3-fade" class="center">
+          <p id="feat-3-title" class="title hidden0">Hardware Privacy Controller</p>
+          <p id="feat-3-desc" class="desc hidden0">webcam · mic · Bluetooth · Wi-Fi · USB — off at kernel level</p>
+        </div>
+      </section>
+
+      <!-- 4. integrated tools -->
+      <section id="tools" class="clip" data-start="19.9" data-duration="5.1" data-track-index="7">
+        <div id="tools-fade" class="fade">
+          <div class="term">
+            <span id="tools-hdr" class="ln hdr hidden0">integrated</span>
+            <span id="tool-0" class="ln hidden0"><span class="w">Haze Protocol</span></span>
+            <span id="tool-1" class="ln hidden0"><span class="w">Haze Chat</span></span>
+            <span id="tool-2" class="ln hidden0"><span class="w">HazeDrop</span></span>
+            <span id="tool-3" class="ln hidden0"><span class="w">Entropy Shield</span></span>
+            <span id="tool-4" class="ln hidden0"><span class="w">Ollama       </span>local AI</span>
+            <span id="tool-5" class="ln hidden0"> </span>
+            <span id="tool-cloud" class="ln k hidden0">None of them connect to the cloud.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. close -->
+      <section id="close" class="clip" data-start="25" data-duration="3.5" data-track-index="8">
+        <div class="center">
+          <img id="close-logo" class="logo hidden0" src="assets/logo.png" alt="" />
+          <p id="close-url" class="url hidden0">mazelinux.berkkucukk.com.tr</p>
+        </div>
+      </section>
+
+      <audio id="bed" src="assets/music/cold-bed.wav" data-start="0" data-duration="28.5" data-track-index="10" data-volume="0.9"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":1,"v":1},{"t":26,"v":1},{"t":28.5,"v":0}]}]}'></audio>
+      <audio id="logo-hit-1" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="3.1" data-track-index="20" data-volume="0.36"></audio>
+      <audio id="base-tick-0" src="assets/sfx/ui/click2.ogg" data-start="5.1" data-track-index="21" data-volume="0.22"></audio>
+      <audio id="base-tick-1" src="assets/sfx/ui/click2.ogg" data-start="5.55" data-track-index="22" data-volume="0.22"></audio>
+      <audio id="base-tick-2" src="assets/sfx/ui/click2.ogg" data-start="6" data-track-index="23" data-volume="0.22"></audio>
+      <audio id="feat-tick-0" src="assets/sfx/ui/click2.ogg" data-start="9.65" data-track-index="24" data-volume="0.18"></audio>
+      <audio id="feat-tick-1" src="assets/sfx/ui/click2.ogg" data-start="12.25" data-track-index="25" data-volume="0.18"></audio>
+      <audio id="feat-tick-2" src="assets/sfx/ui/click2.ogg" data-start="14.85" data-track-index="26" data-volume="0.18"></audio>
+      <audio id="feat-tick-3" src="assets/sfx/ui/click2.ogg" data-start="17.45" data-track-index="27" data-volume="0.18"></audio>
+      <audio id="tool-tick-0" src="assets/sfx/ui/click2.ogg" data-start="20.5" data-track-index="28" data-volume="0.22"></audio>
+      <audio id="tool-tick-1" src="assets/sfx/ui/click2.ogg" data-start="20.9" data-track-index="29" data-volume="0.22"></audio>
+      <audio id="tool-tick-2" src="assets/sfx/ui/click2.ogg" data-start="21.3" data-track-index="30" data-volume="0.22"></audio>
+      <audio id="tool-tick-3" src="assets/sfx/ui/click2.ogg" data-start="21.7" data-track-index="31" data-volume="0.22"></audio>
+      <audio id="tool-tick-4" src="assets/sfx/ui/click2.ogg" data-start="22.1" data-track-index="32" data-volume="0.22"></audio>
+      <audio id="logo-hit-2" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="25.2" data-track-index="33" data-volume="0.36"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const fadeIn  = (sel, t, d = 0.45) => tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: d, ease: "power1.out", immediateRender: false }, t);
+      const fadeOut = (sel, t, d = 0.4)  => tl.to(sel, { opacity: 0, duration: d, ease: "power1.inOut" }, t);
+      const print   = (sel, t) => tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, t);
+
+      // 1. hook → logo
+      fadeIn("#hook-line", 0.3, 0.5);
+      fadeOut("#hook-line", 2.6);
+      fadeIn("#hook-logo", 3.1, 0.5);
+      fadeOut("#hook-logo", 4.1);
+
+      // 2. base
+      print("#base-hdr", 4.7);
+      [5.1,5.55,6].forEach((t, i) => print("#base-" + i, t));
+      fadeOut("#base-fade", 9.1);
+
+      // 3. features
+      [9.5,12.1,14.7,17.3].forEach((t, i) => {
+        fadeIn("#feat-" + i + "-title", t + 0.15, 0.4);
+        fadeIn("#feat-" + i + "-desc",  t + 0.65, 0.4);
+        fadeOut("#feat-" + i + "-fade", t + 2.6 - 0.35, 0.35);
+      });
+
+      // 4. integrated tools
+      print("#tools-hdr", 20.1);
+      [20.5,20.9,21.3,21.7,22.1].forEach((t, i) => print("#tool-" + i, t));
+      print("#tool-5", 22.1);
+      fadeIn("#tool-cloud", 23, 0.5);
+      fadeOut("#tools-fade", 24.6);
+
+      // 5. close
+      fadeIn("#close-logo", 25.2, 0.5);
+      fadeIn("#close-url", 25.9, 0.4);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

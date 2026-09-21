@@ -1,14 +1,21 @@
 alsa-utils
 amd-ucode
 arch-install-scripts
-archinstall
 b43-fwcutter
 base
 bcachefs-tools
 bind
 bolt
 brltty
-broadcom-wl
+# broadcom-wl Arch depolarindan dusuruldu; DKMS surumu kaldi.
+# Modulun ISO icinde derlenebilmesi icin dkms de gerekli (linux-headers zaten listede).
+# NOTE: wl.ko's PCI alias is a wildcard (any class-0280 network controller), so
+# udev used to load this proprietary, unsigned module on Intel-WiFi machines too
+# — tainting the kernel and disabling the return-thunk mitigation. maze-hardening
+# (>= 1.0.0-4) blacklists it and loads it via udev only when a Broadcom (14e4)
+# controller is present. Keep both packages in sync if this is ever changed.
+broadcom-wl-dkms
+dkms
 btrfs-progs
 clonezilla
 cloud-init
@@ -30,6 +37,10 @@ espeakup
 # bootloader + kernels for Secure Boot. MUST be in the live image so the OFFLINE
 # (unpackfs) Calamares install can sign on the target without network.
 sbsigntools
+# systemd-ukify — provides ukify, used by the installer and maze-sb-sign to
+# build the Unified Kernel Image (UKI) that shim chainloads as grubx64.efi on
+# the installed system. MUST be in the live image for offline install signing.
+systemd-ukify
 ethtool
 exfatprogs
 f2fs-tools
@@ -40,7 +51,9 @@ gpart
 gpm
 gptfdisk
 grml-zsh-config
-grub
+# grub — removed (systemd-boot/UKI is the boot stack). The profile's grub/
+# directory went with it: mkarchiso only reads it for the grub bootmodes, and
+# profiledef.sh ships uefi.systemd-boot only, so it was dead weight.
 hdparm
 hyperv
 intel-ucode
@@ -67,7 +80,7 @@ man-db
 man-pages
 mc
 mdadm
-memtest86+
+# memtest86+ (BIOS) — removed (UEFI-only ISO; keep memtest86+-efi below)
 memtest86+-efi
 mkinitcpio
 mkinitcpio-archiso
@@ -99,7 +112,7 @@ ppp
 pptpclient
 pv
 qemu-guest-agent
-refind
+# refind — removed (unused, systemd-boot/UKI is the sole boot manager)
 reflector
 rsync
 rxvt-unicode-terminfo
@@ -111,7 +124,7 @@ smartmontools
 sof-firmware
 squashfs-tools
 sudo
-syslinux
+# syslinux — removed (BIOS boot not supported, UEFI-only ISO)
 systemd-resolvconf
 tcpdump
 terminus-font
@@ -155,6 +168,24 @@ okular
 kcalc
 kfind
 kwalletmanager
+# gnome-keyring — the system's Secret Service (org.freedesktop.secrets), i.e. the
+# API every libsecret client stores logins through: Claude Code, VS Code,
+# Electron/Chromium apps, and proton-vpn-gtk-app itself.
+#
+# It was ALREADY on the ISO, but only as a transitive dependency
+# (proton-vpn-gtk-app -> python-proton-keyring-linux -> gnome-keyring). Listing it
+# explicitly means dropping or re-working Proton VPN can never silently take the
+# whole system's keyring with it.
+#
+# Arch's stock /etc/pam.d/sddm and sddm-autologin already carry
+# `-auth/-session optional pam_gnome_keyring.so auto_start`, so the keyring is
+# unlocked with the login password with no PAM patching from us. /etc/pam.d/passwd
+# (shipped in airootfs) adds the matching password-change hook.
+#
+# NOTE: kwallet ALSO provides org.freedesktop.secrets — see the apiEnabled=false
+# note in maze-plasma-config's /etc/skel/.config/kwalletrc for why exactly one of
+# the two is allowed to own the name.
+gnome-keyring
 filelight
 partitionmanager
 kdeconnect
@@ -206,17 +237,28 @@ gst-plugins-ugly
 gst-libav
 ffmpeg
 
-# --- Maze Linux: Maze's own applications (pulled from the [mazelinux] repo) ---
-# These are published in the official Maze repository (see pacman.conf), so
-# mkarchiso installs them straight from [mazelinux] — they are no longer built
-# locally from the AUR by tools/build-aur.sh.
-entropy-shield
-qlam
-maze
-hazedrop
-haze
-linux-chan-ai
-sentinai
+# --- Maze Linux (pulled from the [mazelinux] repo; see pacman.conf) ---
+# Maze Linux signing keyring — listed explicitly and FIRST so pacman trusts the
+# signatures of every other [mazelinux] package during pacstrap. (maze-meta also
+# depends on it, but keep it explicit here for install ordering.)
+mazelinux-keyring
+# maze-meta — the SINGLE source of truth for the default Maze package set. It
+# depends on every maze-* package (config, branding, and the default Maze apps:
+# maze-guard, entropy-shield, qlam, hazedrop, haze, maze-ai, maze-connect,
+# maze-cloak — NOT linux-chan-ai/sentinai, which can talk to Google Gemini) PLUS
+# curated security tooling (firejail), so listing it here pulls the whole desktop
+# in. To add a new default package: edit maze-meta's depends + bump pkgrel and
+# republish — new ISOs get it here, and installed systems pick it up on
+# `pacman -Syu`. Publish maze-meta AND everything it depends on to [mazelinux]
+# BEFORE building the ISO, or mkarchiso fails with "target not found".
+maze-meta
+# maze-secureboot — the Secure Boot / UKI machinery (signer, kernel-install
+# hook, self-heal units). maze-meta already depends on it; listed explicitly
+# because deploy-to-target.sh now HARD-FAILS the Secure Boot setup without it.
+maze-secureboot
+# maze-installer is the live-ISO-only Calamares installer — deliberately NOT part
+# of maze-meta (it must never land on an installed desktop), so list it here.
+maze-installer
 # Microsoft-signed shim (prebuilt by build-aur.sh into ./localrepo). Lives in the live system so build.sh can read
 # /usr/share/shim-signed/{shimx64,mmx64}.efi for the ISO ESP, and so the installer
 # can copy it onto the target ESP (it is AUR, not installable from official repos).
@@ -231,7 +273,6 @@ tor
 torbrowser-launcher
 onionshare
 wireguard-tools
-openvpn
 clamav
 clamtk
 firewalld
@@ -240,7 +281,6 @@ apparmor
 audit
 lynis
 rkhunter
-macchanger
 libnotify
 # usbguard — backs the USB kill switch in Maze Hardware (block NEW USB devices
 # while keeping the ones currently plugged in working).
@@ -251,13 +291,13 @@ openbsd-netcat
 opensnitch
 # AI
 ollama
-# Virtualization
-qemu-full
-libvirt
-virt-manager
-edk2-ovmf
-vde2
-dnsmasq
+# Virtualization: intentionally NOT on the live ISO. The full stack
+# (qemu-full pulled every foreign-arch emulator + firmware, ~2 GB uncompressed)
+# is dead weight in a live session, so deploy-to-target.sh installs
+# qemu-desktop/libvirt/virt-manager/edk2-ovmf on the INSTALLED system instead
+# (network, best-effort). Only the guest agents stay on the ISO
+# (qemu-guest-agent / virtualbox-guest-utils-nox above) so the live medium
+# itself runs well INSIDE a VM.
 # Desktop apps & utilities
 discord
 bitwarden
@@ -269,8 +309,6 @@ unzip
 unrar
 distrobox
 filezilla
-smartmontools
-ethtool
 xsensors
 acpi
 acpid
@@ -287,22 +325,37 @@ zram-generator
 # Qt6/PySide6 for the Maze welcome app
 pyside6
 
-spotify-launcher
 proton-vpn-gtk-app
-# Gaming (multilib — enabled in pacman.conf)
+tesseract-data-eng
+tesseract-data-tur
+wl-clipboard
+# Gaming (multilib — enabled in pacman.conf).
+# lib32-vulkan-{intel,radeon} are listed EXPLICITLY to satisfy steam's virtual
+# lib32-vulkan-driver dependency with the mesa drivers. Without them pacman
+# picked lib32-nvidia-utils as the provider, which dragged the whole
+# proprietary NVIDIA userspace (nvidia-utils + lib32, ~1.4 GB uncompressed)
+# onto the ISO even though the live session runs nouveau and no nvidia kernel
+# module was ever installed. NVIDIA users get the real driver post-install via
+# maze-gpu-driver (nvidia-dkms + utils, signed for Secure Boot).
 steam
+lib32-vulkan-intel
+lib32-vulkan-radeon
 
 # === Maze Linux: optional AUR apps (auto-managed by tools/build-aur.sh) ===
 # If one of these fails to build, build-aur.sh comments it out (#MAZE-SKIP#)
 # so the ISO build does not break. Do not hand-edit the #MAZE-SKIP# markers.
-brave-origin-bin
+# obfs4proxy — Tor bridge transport used by entropy-shield (AUR-only since it
+# left the official repos). Without it, enabling bridges wrote a
+# ClientTransportPlugin line pointing at a missing binary and tor refused to
+# start at all. entropy-shield >= 4.1.3 also guards for it at runtime.
+obfs4proxy
 upscayl-bin
 session-desktop-bin
 joplin-bin
 claude-code
 # Calamares graphical installer (live ISO only). Built from the AUR by
-# build-aur.sh; Maze's own config + branding live in airootfs/etc/calamares and
-# airootfs/usr/share/calamares/branding/maze.
+# build-aur.sh; Maze's own config + branding are shipped by the maze-installer
+# package from [mazelinux].
 calamares
 # xhost — the maze-calamares launcher uses it to let root reach the live user's
 # XWayland server (official repo; NOT auto-pulled by calamares).

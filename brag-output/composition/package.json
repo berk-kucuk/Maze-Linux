@@ -1,0 +1,11 @@
+{
+  "name": "composition",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.54 preview",
+    "check": "npx --yes hyperframes@0.8.54 check",
+    "render": "npx --yes hyperframes@0.8.54 render",
+    "publish": "npx --yes hyperframes@0.8.54 publish"
+  }
+}

@@ -12,15 +12,18 @@ set -uo pipefail
 
 # Maze's own applications — published in the [mazelinux] repo (configured in
 # /etc/pacman.conf), so they install with a plain pacman -S, not from the AUR.
+# Must match DEFAULT_MAZE_APPS in deploy-to-target.sh and maze-meta's depends.
+# linux-chan-ai and sentinai are deliberately NOT here (both can send data to
+# Google Gemini); they stay one `pacman -S` away in [mazelinux].
 MAZE_REPO_PKGS=(
-    entropy-shield qlam maze hazedrop haze linux-chan-ai sentinai
+    entropy-shield qlam maze-guard hazedrop haze maze-ai maze-connect maze-cloak
 )
 
 # Third-party apps that only exist on the AUR — built with makepkg. 'paru' is
 # built from source so it matches this system's libalpm ABI.
 PKGS=(
     paru
-    brave-origin-bin mullvad-browser-bin upscayl-bin session-desktop-bin
+    mullvad-browser-bin upscayl-bin session-desktop-bin
     joplin-bin onlyoffice-bin
 )
 
@@ -97,11 +100,20 @@ failed=()
 # Maze's own applications: install from the [mazelinux] repo with pacman -S
 # (refresh + install, retried). Only the third-party AUR apps below are built.
 printf '%s:: Installing Maze applications from the [mazelinux] repo...%s\n' "${c_acc}" "${c_reset}"
-if retry 3 sudo pacman -Sy --noconfirm --needed "${MAZE_REPO_PKGS[@]}"; then
-    printf '   -> Maze applications installed.\n'
+# Only the ones that are MISSING: `pacman -S --needed` skips an exact version
+# match only, and would DOWNGRADE an installed app that is newer than the repo's
+# (an ISO built with a not-yet-published build). Updates are `pacman -Syu`'s job.
+MAZE_REPO_MISSING=()
+for _p in "${MAZE_REPO_PKGS[@]}"; do
+    pacman -Qq "${_p}" >/dev/null 2>&1 || MAZE_REPO_MISSING+=("${_p}")
+done
+if [[ ${#MAZE_REPO_MISSING[@]} -eq 0 ]]; then
+    printf '   -> every Maze application is already installed; nothing to do here.\n'
+elif retry 3 sudo pacman -Sy --noconfirm --needed "${MAZE_REPO_MISSING[@]}"; then
+    printf '   -> Maze applications installed: %s\n' "${MAZE_REPO_MISSING[*]}"
 else
     printf '%s   -> ERROR: some Maze applications failed (see %s).%s\n' "${c_warn}" "${VLOG}" "${c_reset}"
-    failed+=("${MAZE_REPO_PKGS[@]}")
+    failed+=("${MAZE_REPO_MISSING[@]}")
 fi
 
 total=${#PKGS[@]}; i=0

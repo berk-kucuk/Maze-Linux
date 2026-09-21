@@ -1,0 +1,1 @@
+../../maze-tools/maze-tools/usr/local/bin/maze-audit

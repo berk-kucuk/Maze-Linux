@@ -13,7 +13,7 @@ English by default.
 | `packages.x86_64`        | Packages installed into the live system.                      |
 | `pacman.conf`            | Pacman configuration used during the build.                   |
 | `airootfs/`              | Files overlaid onto the live root filesystem.                 |
-| `efiboot/`, `grub/`, `syslinux/` | Boot loader configurations (UEFI + BIOS).             |
+| `efiboot/`               | UEFI boot loader configuration (systemd-boot). Maze is **UEFI-only**. |
 | `build.sh`               | Convenience wrapper around `mkarchiso`.                        |
 | `maze-logo.png`, `maze-boot-animation/` | Source branding assets (logo + Plymouth theme). |
 
@@ -107,6 +107,7 @@ If you move the project directory, update the absolute `Server` path in the
 - Arch Linux (or an Arch-based host)
 - The `archiso` package: `sudo pacman -S archiso`
 - `sbsigntools` for Secure Boot signing of the ISO: `sudo pacman -S sbsigntools`
+- `systemd-ukify` for building the Unified Kernel Image: `sudo pacman -S systemd-ukify`
 - Root privileges and a few GB of free disk space
 
 ## Building the ISO
@@ -160,12 +161,23 @@ system using a Microsoft-signed **shim** plus a Maze key enrolled as a **MOK**
 Mode* is required.
 
 ```
-firmware → shim (Microsoft-signed) → systemd-boot (Maze-signed) → UKI/kernel (Maze-signed)
+firmware → shim (Microsoft-signed) → Unified Kernel Image (Maze-signed)
 ```
+
+The kernel, initramfs and kernel command line are bundled into a single
+**Unified Kernel Image** (UKI) PE binary, signed with the Maze key and installed
+as `grubx64.efi` — the second stage shim chainloads by that exact name. The
+shim **always** verifies its second stage through its own `shim_lock` protocol
+(MOK-backed), never via the firmware's `db`. Because the kernel is already
+embedded inside the UKI, no separate firmware `LoadImage()` of `vmlinuz` ever
+happens. This is what makes the chain portable across every UEFI firmware —
+strict ones (MSI, some ASUS, …) that ignore the MOK for loose kernels and only
+consult their own `db` no longer reject the boot with
+*Security Policy Violation*.
 
 - **Live ISO** — signed at build time with the shared Maze ISO key in
   `keys/secureboot/` (generated once by `tools/gen-sb-keys.sh`; `build.sh`
-  patches `mkarchiso` to inject shim and sign systemd-boot + the kernel). Boot it
+  patches `mkarchiso` to inject shim and build + sign the UKI). Boot it
   once and enroll `MOK.cer` via MokManager as described above.
 - **Installed system** — enable the **Secure Boot** toggle in the installer's
   *Bootloader* menu (on by default on UEFI with systemd-boot + UKI). The
@@ -181,63 +193,83 @@ firmware → shim (Microsoft-signed) → systemd-boot (Maze-signed) → UKI/kern
 If you prefer not to use Secure Boot, simply disable it in firmware (the ISO and
 the installed system boot normally either way), or turn the installer toggle off.
 
-## Installing Maze Linux
+## Checking an installed system
 
-On the booted live medium, connect to the internet and run the guided
-installer:
+Every Maze install ships `maze-doctor` (part of `maze-tools`). It is read-only —
+it inspects and reports, never repairs — and every finding prints the command
+that fixes it:
 
 ```sh
-maze-install
+sudo maze-doctor
 ```
 
-`maze-install` is a branded front-end around our **customized fork of
-archinstall** (see `airootfs/usr/local/bin/maze-install`). It is the single
-entry point we customize over time. Customization data lives in
-`/etc/maze-installer/`:
+It walks the whole boot chain (shim → grubx64.efi → UKI → kernel, signatures and
+MOK enrolment included), the installed kernels and their DKMS modules, every
+Maze package and its files, branding, the kernel command line and initramfs
+hooks, pacman configuration, leftovers from the live medium, storage, filesystem
+integrity, snapshots, services, the security posture and recent kernel errors.
 
-| File                            | Purpose                                         |
-| ------------------------------- | ----------------------------------------------- |
-| `maze.json`                     | Passed to `archinstall --config` (optional).    |
-| `creds.json`                    | Passed to `archinstall --creds` (optional).     |
-| `*.example`                     | Templates to copy and edit.                     |
+`--deep` additionally verifies every installed file on the system against its
+package (slow). `--no-color` gives plain text suitable for a bug report — that
+output is the most useful thing to attach when asking for help.
 
-A complete config + creds enables an unattended install (`maze-install
---silent`); a partial config just pre-fills the menu. This data-file layout
-lets a future GUI front-end generate the configs and then call `maze-install`.
-
-### Customized archinstall fork
-
-We ship a customized fork of [archinstall](https://github.com/archlinux/archinstall)
-instead of the stock TUI:
-
-- **Source (editable):** `src/archinstall/` — full upstream clone (base: 4.3)
-  with Maze Linux changes (installer title, default hostname `maze`, bootloader
-  entry labels "Maze Linux (...)").
-- **Vendored overlay:** `airootfs/opt/maze-archinstall/archinstall/` — the copy
-  that ends up in the ISO.
-- **Execution:** `maze-install` runs the fork via
-  `PYTHONPATH=/opt/maze-archinstall python3 -m archinstall`, so it overrides the
-  packaged `archinstall`. The distro `archinstall` package is kept in
-  `packages.x86_64` only to provide the Python dependencies.
-- **Themed TUI:** the installer is a [Textual](https://textual.textualize.io/)
-  app styled to match Maze's true-black **OLED** desktop — all CSS is inline in
-  `airootfs/opt/maze-archinstall/archinstall/tui/components.py` (one block per
-  screen plus the global theme in `_AppInstance`). Menus render as a
-  **configuration checklist** — `✓` for a step that already has a value, `●` for
-  a required step that still needs one — with an accented **▸ Install** action, a
-  guidance line under the title bar and a live **Details** panel describing the
-  highlighted step. KDE Plasma is the only desktop profile, so the desktop picker
-  is skipped and you go straight to Maze's app/security sub-selections.
-
-Customization workflow:
-
-The installer that ships in the ISO is the overlay copy under
-`airootfs/opt/maze-archinstall/` — edit it directly, then rebuild. (`src/archinstall`
-is only a stale upstream reference for diffing; it is NOT vendored into the build.)
+Two more tools ship next to it (also in `maze-tools`):
 
 ```sh
-# 1. edit the installer that the build actually ships
-$EDITOR airootfs/opt/maze-archinstall/archinstall/...
-# 2. rebuild
+sudo maze-audit --deep        # did the install leave the machine the way the source intends?
+sudo maze-exercise            # kernel-update rehearsal, daemon restarts, then maze-audit
+```
+
+`maze-audit` checks the machine against what `deploy-to-target.sh`, the
+package presets and `packages.x86_64` promise — every live-medium file that
+must be gone, every kernel parameter, the boot chain down to the hooks inside
+the sealed initrd, the service set, the btrfs layout; `--deep` adds the LUKS
+header, the MOK list, tmpfiles/sysusers compliance and more. `maze-exercise`
+changes state on purpose: it reinstalls the recovery kernel to drive the whole
+hook chain, restarts the Maze daemons, optionally suspends (`--suspend`), and
+audits afterwards. Both are read from the source tree as
+`MazeLinux/tools/{audit,exercise}-installed-system.sh`.
+
+## Installing Maze Linux
+
+> **UEFI is required.** Maze's boot stack (systemd-boot + Unified Kernel Image +
+> shim Secure Boot) is UEFI-only and has no BIOS/legacy bootloader path, so a
+> legacy-BIOS / CSM install cannot complete (it fails at the bootloader step).
+> Boot the live medium in **UEFI mode** — disable CSM / Legacy Boot in firmware
+> setup if needed. `maze-calamares` detects a BIOS boot and refuses up front with
+> this instruction rather than failing late during partitioning.
+
+On the booted live medium, connect to the internet and launch the graphical
+installer — click **Install Maze Linux** in the panel/dock, or run:
+
+```sh
+maze-calamares
+```
+
+Maze uses **[Calamares](https://calamares.io/)** as its installer, in an
+**offline / `unpackfs`** model: the baked live system is copied to the target
+(no `pacstrap`), then Maze's own **`deploy-to-target.sh`** finalises the install
+(branding, Plymouth, kernel params, Secure Boot / MOK signing, AUR apps,
+security services). All Maze-specific install logic lives in that one script,
+which is wired into Calamares as a `shellprocess` module — so the live ISO and
+the installed system stay in sync from a single source.
+
+- **Config & branding:** `airootfs/etc/calamares/` (`settings.conf` + `modules/`)
+  and `airootfs/usr/share/calamares/branding/maze/` (true-black OLED + white).
+- **Launcher:** `airootfs/usr/local/bin/maze-calamares` (XWayland + pkexec) and
+  `maze-calamares.desktop` (pinned in the live panel/dock).
+- **Bootloader:** systemd-boot (UEFI-only; installs fail in legacy BIOS mode);
+  boots straight into Maze (`timeout 0`, so the splash comes up immediately).
+- Calamares is not in the official repos, so it is built from the **AUR** by
+  `tools/build-aur.sh` into the local repo and baked into the live ISO
+  (live-medium only).
+
+See **`MD-Files/CALAMARES.md`** for the full module list and the VM
+debug runbook.
+
+```sh
+# edit Maze's install logic / Calamares config, then rebuild
+$EDITOR airootfs/usr/share/maze/install/deploy-to-target.sh
+$EDITOR airootfs/etc/calamares/...
 sudo ./build.sh
 ```

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Maze Linux — brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Hack";
+        src: url("assets/fonts/Hack-Regular.ttf") format("truetype");
+        font-weight: 400;
+      }
+      @font-face {
+        font-family: "Hack";
+        src: url("assets/fonts/Hack-Bold.ttf") format("truetype");
+        font-weight: 700;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000000;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: #000000;
+        color: #e6e6e6;
+        font-family: "Hack", "DejaVu Sans Mono", monospace;
+        font-size: 34px;
+        line-height: 1.6;
+      }
+      .clip { position: absolute; inset: 0; }
+      .fade { position: absolute; inset: 0; }
+
+      /* ---- terminal ---- */
+      .term { padding: 120px 0 0 140px; }
+      .ln { display: block; white-space: pre; }
+      .k { color: #22d3ee; }              /* prompt / accent */
+      .d { color: #8c8c8c; }              /* labels / secondary */
+      .w { color: #ffffff; }
+      .cur {
+        display: inline-block;
+        width: 0.62em;
+        height: 1.1em;
+        vertical-align: -0.18em;
+        background: #22d3ee;
+        margin-left: 1px;
+      }
+      .hidden0 { opacity: 0; }
+
+      /* ---- statements ---- */
+      .center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .say { font-size: 54px; color: #e6e6e6; white-space: nowrap; }
+      .mark {
+        font-size: 128px;
+        font-weight: 700;
+        letter-spacing: 0.28em;
+        text-indent: 0.28em;   /* balance trailing letter-spacing */
+        color: #ffffff;
+        line-height: 1.1;
+        margin-top: 34px;
+      }
+      .facts { font-size: 27px; color: #8c8c8c; margin-top: 30px; white-space: nowrap; }
+      .url { font-size: 30px; color: #22d3ee; margin-top: 14px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="21" data-width="1920" data-height="1080">
+
+      <!-- Scene 1 + 2: prompt, typed command, status report -->
+      <section id="term" class="clip" data-start="0" data-duration="8" data-track-index="1">
+        <div id="term-fade" class="fade">
+          <div class="term">
+            <span class="ln"><span class="k">maze@maze:~$ </span><span id="cmd"></span><span id="cur1" class="cur"></span></span>
+            <span id="l0" class="ln hidden0"><span class="w">MAZE LINUX 2026.09</span>        <span class="d">arch x86_64 · kde plasma 6 / wayland</span></span>
+            <span id="l1" class="ln hidden0"><span class="d">boot        </span>shim → signed UKI → kernel     <span class="d">secure boot   </span><span class="k">enrolled</span></span>
+            <span id="l2" class="ln hidden0"><span class="d">disk        </span>btrfs + LUKS                   <span class="d">encryption    </span><span class="k">on</span></span>
+            <span id="l3" class="ln hidden0"><span class="d">apparmor    </span><span class="k">enforcing</span>                      <span class="d">firewalld     </span><span class="k">active</span></span>
+            <span id="l4" class="ln hidden0"><span class="d">opensnitch  </span><span class="k">active</span>                         <span class="d">auditd        </span><span class="k">active</span></span>
+            <span id="l5" class="ln hidden0"><span class="d">maze-guard  </span><span class="k">watching</span>                       <span class="d">maze-cloak    </span><span class="k">stable mac</span></span>
+            <span id="l6" class="ln hidden0"><span class="d">telemetry   </span><span class="k">none</span>                           <span class="d">ai            </span><span class="k">local only</span></span>
+            <span id="l7" class="ln hidden0"><span class="k">maze@maze:~$ </span><span id="cur2" class="cur"></span></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 3: the contrast -->
+      <section id="contrast" class="clip" data-start="7.9" data-duration="3.9" data-track-index="2">
+        <div id="contrast-fade" class="center hidden0">
+          <p class="say">Most systems tell you: "something was blocked."</p>
+        </div>
+      </section>
+
+      <!-- Scene 4: the detection record -->
+      <section id="detect" class="clip" data-start="11.8" data-duration="5" data-track-index="3">
+        <div id="detect-fade" class="fade">
+          <div class="term">
+            <span id="h0" class="ln hidden0"><span class="d">[maze-guard] </span><span class="w">14:02:17  ARP spoofing — gateway impersonation attempt</span></span>
+            <span id="f0" class="ln hidden0">  <span class="d">device    </span><span class="k">d4:6d:6d:1a:2b:3c</span>   <span class="k">Hewlett-Packard</span></span>
+            <span id="f1" class="ln hidden0">  <span class="d">ip        </span><span class="k">192.168.1.104</span></span>
+            <span id="f2" class="ln hidden0">  <span class="d">os        </span><span class="k">Windows 10/11</span></span>
+            <span id="f3" class="ln hidden0">  <span class="d">action    </span>blocked · evidence written to /var/lib/maze-guard/attackers/</span>
+            <span id="f4" class="ln hidden0"> </span>
+            <span id="f5" class="ln hidden0"><span class="k">maze@maze:~$ </span><span id="cur3" class="cur"></span></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 5: outro -->
+      <section id="outro" class="clip" data-start="16.7" data-duration="4.3" data-track-index="4">
+        <div id="outro-wrap" class="center">
+          <p id="names" class="say hidden0">Maze names the device.</p>
+          <p id="wordmark" class="mark hidden0">MAZE LINUX</p>
+          <p id="facts" class="facts hidden0">Arch · KDE Plasma · UEFI-only · signed kernel · nothing leaves the machine</p>
+          <p id="url" class="url hidden0">mazelinux.berkkucukk.com.tr</p>
+        </div>
+      </section>
+
+      <!-- Audio: cold bed (fade in 1s, fade out over the last 2s) -->
+      <audio id="bed" src="assets/music/cold-bed.wav" data-start="0" data-duration="21" data-track-index="10" data-volume="0.9"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":0},{"t":1,"v":1},{"t":19,"v":1},{"t":21,"v":0}]}]}'></audio>
+      <audio id="key-0" src="assets/sfx/keyboard/keypress-003.wav" data-start="0.800" data-duration="0.14" data-track-index="20" data-volume="0.26"></audio>
+      <audio id="key-1" src="assets/sfx/keyboard/keypress-014.wav" data-start="0.875" data-duration="0.14" data-track-index="21" data-volume="0.26"></audio>
+      <audio id="key-2" src="assets/sfx/keyboard/keypress-026.wav" data-start="0.950" data-duration="0.14" data-track-index="22" data-volume="0.26"></audio>
+      <audio id="key-3" src="assets/sfx/keyboard/keypress-007.wav" data-start="1.025" data-duration="0.14" data-track-index="23" data-volume="0.26"></audio>
+      <audio id="key-4" src="assets/sfx/keyboard/keypress-018.wav" data-start="1.100" data-duration="0.14" data-track-index="24" data-volume="0.26"></audio>
+      <audio id="key-5" src="assets/sfx/keyboard/keypress-030.wav" data-start="1.175" data-duration="0.14" data-track-index="25" data-volume="0.26"></audio>
+      <audio id="key-6" src="assets/sfx/keyboard/keypress-011.wav" data-start="1.250" data-duration="0.14" data-track-index="26" data-volume="0.26"></audio>
+      <audio id="key-7" src="assets/sfx/keyboard/keypress-022.wav" data-start="1.325" data-duration="0.14" data-track-index="27" data-volume="0.26"></audio>
+      <audio id="key-8" src="assets/sfx/keyboard/keypress-003.wav" data-start="1.400" data-duration="0.14" data-track-index="28" data-volume="0.26"></audio>
+      <audio id="key-10" src="assets/sfx/keyboard/keypress-026.wav" data-start="1.550" data-duration="0.14" data-track-index="30" data-volume="0.26"></audio>
+      <audio id="key-11" src="assets/sfx/keyboard/keypress-007.wav" data-start="1.625" data-duration="0.14" data-track-index="31" data-volume="0.26"></audio>
+      <audio id="key-12" src="assets/sfx/keyboard/keypress-018.wav" data-start="1.700" data-duration="0.14" data-track-index="32" data-volume="0.26"></audio>
+      <audio id="key-13" src="assets/sfx/keyboard/keypress-030.wav" data-start="1.775" data-duration="0.14" data-track-index="33" data-volume="0.26"></audio>
+      <audio id="key-14" src="assets/sfx/keyboard/keypress-011.wav" data-start="1.850" data-duration="0.14" data-track-index="34" data-volume="0.26"></audio>
+      <audio id="key-15" src="assets/sfx/keyboard/keypress-022.wav" data-start="1.925" data-duration="0.14" data-track-index="35" data-volume="0.26"></audio>
+      <audio id="key-16" src="assets/sfx/keyboard/keypress-003.wav" data-start="2.000" data-duration="0.14" data-track-index="36" data-volume="0.26"></audio>
+      <audio id="key-17" src="assets/sfx/keyboard/keypress-014.wav" data-start="2.075" data-duration="0.14" data-track-index="37" data-volume="0.26"></audio>
+      <audio id="tick-0" src="assets/sfx/ui/click2.ogg" data-start="3.00" data-track-index="40" data-volume="0.22"></audio>
+      <audio id="tick-1" src="assets/sfx/ui/click2.ogg" data-start="3.35" data-track-index="41" data-volume="0.22"></audio>
+      <audio id="tick-2" src="assets/sfx/ui/click2.ogg" data-start="3.70" data-track-index="42" data-volume="0.22"></audio>
+      <audio id="tick-3" src="assets/sfx/ui/click2.ogg" data-start="4.05" data-track-index="43" data-volume="0.22"></audio>
+      <audio id="tick-4" src="assets/sfx/ui/click2.ogg" data-start="4.40" data-track-index="44" data-volume="0.22"></audio>
+      <audio id="tick-5" src="assets/sfx/ui/click2.ogg" data-start="4.75" data-track-index="45" data-volume="0.22"></audio>
+      <audio id="tick-6" src="assets/sfx/ui/click2.ogg" data-start="5.10" data-track-index="46" data-volume="0.22"></audio>
+      <audio id="det-hit" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="12.1" data-track-index="60" data-volume="0.36"></audio>
+      <audio id="det-tick-0" src="assets/sfx/ui/click2.ogg" data-start="12.55" data-track-index="61" data-volume="0.20"></audio>
+      <audio id="det-tick-1" src="assets/sfx/ui/click2.ogg" data-start="12.95" data-track-index="62" data-volume="0.20"></audio>
+      <audio id="det-tick-2" src="assets/sfx/ui/click2.ogg" data-start="13.35" data-track-index="63" data-volume="0.20"></audio>
+      <audio id="det-tick-3" src="assets/sfx/ui/click2.ogg" data-start="13.75" data-track-index="64" data-volume="0.20"></audio>
+      <audio id="mark-hit" src="assets/sfx/impact/impactSoft_medium_003.ogg" data-start="18.2" data-track-index="70" data-volume="0.34"></audio>
+    </div>
+
+    <script>
+      const CMD = "mazelinux --status";
+      const TYPE_START = 0.8, CPS_DT = 0.075;
+      const OUT_START = 3, LINE_DT = 0.35;
+      const DET_START = 11.8, DET_HEAD = 12.1, DET_FIELD = [12.55,12.95,13.35,13.75];
+      const OUTRO_START = 16.7, WORDMARK = 18.2;
+
+      const tl = gsap.timeline({ paused: true });
+
+      // square-wave cursor blink between two global times (finite repeat, seek-safe)
+      function blink(sel, from, to, half = 0.45) {
+        const cycles = Math.max(0, Math.floor((to - from) / (half * 2)) - 1);
+        tl.fromTo(sel, { opacity: 1 }, { opacity: 0, duration: half, repeat: cycles, yoyo: true, ease: "steps(1)", immediateRender: false }, from);
+      }
+      function show(sel, t, dur = 0.06) {
+        tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: dur, ease: "none", immediateRender: false }, t);
+      }
+
+      // ---- Scene 1: prompt, blink once, type, Enter ----
+      const cmdEl = document.getElementById("cmd");
+      const typed = { n: 0 };
+      tl.set("#cur1", { opacity: 1 }, 0);
+      blink("#cur1", 0, TYPE_START, 0.35);
+      tl.set("#cur1", { opacity: 1 }, TYPE_START);
+      tl.to(typed, {
+        n: CMD.length, duration: CMD.length * CPS_DT, ease: "none", snap: "n",
+        onUpdate: () => { cmdEl.textContent = CMD.slice(0, typed.n); },
+      }, TYPE_START);
+      // Enter: cursor leaves the command line
+      tl.set("#cur1", { opacity: 0 }, 2.6);
+
+      // ---- Scene 2: status report prints line by line, then an idle prompt ----
+      for (let i = 0; i < 7; i++) show("#l" + i, OUT_START + i * LINE_DT);
+      show("#l7", 5.5);
+      blink("#cur2", 5.5, 7.3);
+      tl.to("#term-fade", { opacity: 0, duration: 0.6, ease: "power1.inOut" }, 7.3);
+
+      // ---- Scene 3: one sentence ----
+      tl.to("#contrast-fade", { opacity: 1, duration: 0.6, ease: "power1.out" }, 7.95);
+
+      // ---- Scene 4: detection record ----
+      show("#h0", DET_HEAD);
+      DET_FIELD.forEach((t, i) => show("#f" + i, t));
+      show("#f4", 14.2);
+      show("#f5", 14.2);
+      blink("#cur3", 14.2, 16.1);
+      tl.to("#detect-fade", { opacity: 0, duration: 0.6, ease: "power1.inOut" }, 16.1);
+
+      // ---- Scene 5: outro ----
+      tl.to("#names", { opacity: 1, duration: 0.5, ease: "power1.out" }, 16.75);
+      tl.to("#wordmark", { opacity: 1, duration: 0.5, ease: "power1.out" }, WORDMARK);
+      tl.to("#facts", { opacity: 1, duration: 0.4, ease: "power1.out" }, WORDMARK + 0.6);
+      tl.to("#url", { opacity: 1, duration: 0.4, ease: "power1.out" }, WORDMARK + 0.9);
+      // hold to 21s
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

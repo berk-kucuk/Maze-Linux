@@ -38,5 +38,12 @@ Thumbs.db
 *~
 *.log
 
-# --- Stale upstream archinstall clone (real installer lives in airootfs/opt/maze-archinstall) ---
+# --- Local scratch / vendored sources (not part of the build) ---
 /src/
+
+# Build transcripts written by build.sh
+/logs/
+
+# --- Backups & preview caches ---
+*.bak
+.thumbnails/

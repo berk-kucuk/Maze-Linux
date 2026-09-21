@@ -1,0 +1,141 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <style>
+    @font-face { font-family: "JetBrains Mono"; font-weight: 400; font-style: normal; src: url("assets/fonts/JetBrainsMono-400.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-weight: 500; font-style: normal; src: url("assets/fonts/JetBrainsMono-500.woff2") format("woff2"); }
+    @font-face { font-family: "JetBrains Mono"; font-weight: 600; font-style: normal; src: url("assets/fonts/JetBrainsMono-600.woff2") format("woff2"); }
+
+    /* frame root — styled via #root only (never a class on the composition element) */
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "JetBrains Mono", monospace;
+      color: #FFFFFF;
+    }
+    #root * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    .clip { position: absolute; inset: 0; }
+
+    /* track 0 — full-bleed OLED-black ground (a clip layer, never on #root) */
+    [id="02-logo-ground"] { background: #000000; }
+
+    /* the one camera: constant low-amplitude push-in 1.00 → 1.03 across the full shot */
+    [id="02-logo-cam"] {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    /* track 1 — back plane: blur(8px) scale(1.04); the drifting 154px grid inside it at 0.35 */
+    [id="02-logo-back"] {
+      filter: blur(8px);
+      transform: scale(1.04);
+      transform-origin: 50% 50%;
+      will-change: filter;
+    }
+    [id="02-logo-grid"] {
+      position: absolute;
+      inset: -10%;
+      opacity: 0.35;
+      background-image:
+        linear-gradient(#1A2022 1px, transparent 1px),
+        linear-gradient(90deg, #1A2022 1px, transparent 1px);
+      background-size: 154px 154px;
+      will-change: transform;
+    }
+
+    /* track 2 — front plane: the mark + the frame's one cyan element */
+    [id="02-logo-front"] {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2cqw; /* ≈ 38px — the sketch's logo → rule gap */
+    }
+    [id="02-logo-mark"] {
+      --dof: 8px;                 /* depth-of-field-blur: tweened on the timeline, read by filter */
+      display: block;
+      width: 30cqw;               /* ≈ 576px — ~30% of frame width, below native 669px */
+      height: auto;
+      filter: blur(var(--dof));
+      transform-origin: 50% 50%;
+      will-change: filter, transform, opacity;
+      z-index: 2;                 /* the sharpening focal layer sits above the blurred plane */
+      position: relative;
+    }
+    [id="02-logo-rule"] {
+      width: 36px;
+      height: 2px;
+      background: #00E5FF;        /* fire-orange (cyan) — rationed: this is the frame's only accent */
+      transform-origin: 0% 50%;   /* draws left → right */
+      will-change: transform;
+    }
+  </style>
+
+  <div id="root" data-composition-id="02-logo">
+    <!-- track 0: ground -->
+    <div id="02-logo-ground" class="clip" data-start="0" data-duration="2.8" data-track-index="0"></div>
+
+    <!-- one scene-wrapping camera: push-in 1.00 → 1.03 over the full 2.8s -->
+    <div id="02-logo-cam">
+      <!-- track 1: back plane (handoff_in from 01 — same grid element, same drift vector) -->
+      <div id="02-logo-back" class="clip" data-start="0" data-duration="2.8" data-track-index="1">
+        <div id="02-logo-grid"></div>
+      </div>
+
+      <!-- track 2: front plane — the focal mark and the cyan rule stub -->
+      <div id="02-logo-front" class="clip" data-start="0" data-duration="2.8" data-track-index="2">
+        <img id="02-logo-mark" src="assets/maze-logo.png" alt="" width="669" height="373">
+        <div id="02-logo-rule"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var DURATION = 2.8;
+      var tl = gsap.timeline({ paused: true });
+
+      var cam  = document.getElementById("02-logo-cam");
+      var grid = document.getElementById("02-logo-grid");
+      var mark = document.getElementById("02-logo-mark");
+      var rule = document.getElementById("02-logo-rule");
+
+      /* --- camera breath (multi-phase-camera, single-phase form): ONE tween end-to-end --- */
+      tl.fromTo(cam,
+        { scale: 1.00 },
+        { scale: 1.03, duration: DURATION, ease: "power3.inOut" },
+        0);
+
+      /* --- back plane: grid handoff_in — offset (−38,−38) at 0.0s, drifting (−12px/s, −12px/s).
+             Constant velocity is the seam contract with 01, so this one translate is ease:"none". --- */
+      tl.fromTo(grid,
+        { x: -38, y: -38 },
+        { x: -38 - 12 * DURATION, y: -38 - 12 * DURATION, duration: DURATION, ease: "none" },
+        0);
+
+      /* --- Scene 1 (0.0–1.6s): the mark rises out of the depth into focus.
+             depth-of-field-blur two-plane rack on --dof (8px → 0) with a plain 0.92 → 1.0 scale
+             and opacity 0 → 1 riding on it — one long power3.inOut, no overshoot. --- */
+      tl.fromTo(mark,
+        { opacity: 0, scale: 0.92, "--dof": "8px" },
+        { opacity: 1, scale: 1.00, "--dof": "0px", duration: 1.6, ease: "power3.inOut" },
+        0);
+
+      /* --- Scene 2 (1.2–1.8s): the cyan rule stub draws left → right beneath the wordmark. --- */
+      tl.fromTo(rule,
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.6, ease: "power3.inOut" },
+        1.2);
+
+      /* --- Scene 3 (1.8–2.8s): held read — nothing else moves; the camera breath carries it. --- */
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["02-logo"] = tl;
+    })();
+  </script>
+</template>

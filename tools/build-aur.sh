@@ -5,7 +5,8 @@
 # (./localrepo) that the ISO build (mkarchiso) installs from. This is how the
 # Maze AUR packages end up PREINSTALLED in the (offline) live ISO.
 #
-# Host isolation: every build runs inside ./aur/chroot, never on your host.
+# Host isolation: every build runs inside a throwaway chroot (see CHROOT below,
+# by default ~/.cache/maze-aur-chroot), never on your host.
 # Build dependencies and the AUR packages are installed into that throwaway
 # chroot only, so your host's installed package set is left untouched. sudo is
 # used solely to manage the chroot (mkarchroot/makechrootpkg require it).
@@ -21,14 +22,19 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILDDIR="${ROOT}/aur"
-CHROOT="${BUILDDIR}/chroot"
+# The build chroot must NOT live on the project drive. This checkout sits under
+# /run/media, which udisks mounts nosuid,nodev — inside such a chroot sudo loses
+# its setuid bit and makechrootpkg dies with "/etc/sudo.conf is owned by uid
+# 1000, should be 0" for EVERY package. Keep the chroot on the internal disk.
+# Override with MAZE_CHROOT=/some/path if you want it elsewhere.
+CHROOT="${MAZE_CHROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/maze-aur-chroot}"
 LOCALREPO="${ROOT}/localrepo"
 DBNAME="maze-aur"
 
 # REQUIRED: AUR packages that are NOT published in the [mazelinux] repo and must
 # be built locally. If any of these fail, the build aborts.
 #
-# Maze's OWN applications (entropy-shield, qlam, maze, hazedrop, haze,
+# Maze's OWN applications (entropy-shield, qlam, maze-guard, hazedrop, haze,
 # linux-chan-ai, sentinai) are deliberately NOT here anymore: they now ship from
 # the official [mazelinux] repo, so mkarchiso pulls them straight from there
 # (see pacman.conf) instead of building them from the AUR.
@@ -40,7 +46,10 @@ REQUIRED=(
 # OPTIONAL: desktop/AI/privacy apps. If one fails to build it is skipped with a
 # warning (the ISO build still succeeds) instead of aborting everything.
 OPTIONAL=(
-    brave-origin-bin
+    # obfs4proxy — Tor pluggable transport (obfs4 + meek_lite). entropy-shield's
+    # bridge feature shells out to it; it used to be an official package but is
+    # AUR-only now, so without this the bridge option had nothing to run.
+    obfs4proxy
     upscayl-bin
     session-desktop-bin
     joplin-bin
@@ -76,7 +85,19 @@ done
 # chroot). Providing these lets such packages build.
 CHROOT_EXTRA=(python-setuptools python-wheel python-pip)
 
-mkdir -p "${BUILDDIR}" "${LOCALREPO}"
+# Refuse to build on a nosuid/nodev mount — the failure mode is otherwise a wall
+# of confusing sudo errors, one per package.
+chroot_mount_opts="$(findmnt -T "$(dirname "${CHROOT}")" -no OPTIONS 2>/dev/null || true)"
+case ",${chroot_mount_opts}," in
+    *,nosuid,*|*,nodev,*)
+        echo "Error: ${CHROOT} is on a nosuid/nodev mount (${chroot_mount_opts})." >&2
+        echo "       makechrootpkg cannot work there. Set MAZE_CHROOT to a path on" >&2
+        echo "       the internal disk, e.g. MAZE_CHROOT=\"\${HOME}/.cache/maze-aur-chroot\"" >&2
+        exit 1
+        ;;
+esac
+
+mkdir -p "${BUILDDIR}" "${LOCALREPO}" "$(dirname "${CHROOT}")"
 
 echo ">> Fetching AUR sources via git"
 for pkg in "${PACKAGES[@]}"; do

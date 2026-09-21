@@ -1,0 +1,112 @@
+name: Lint
+
+# Static checks only — no full ISO build. A real mkarchiso build needs a
+# privileged Arch host, network access to build ~10 AUR packages (Calamares
+# alone is a heavy KPMcore/Qt6/KF6 build), and the maintainer's Secure Boot
+# signing key, none of which fit a public CI runner. This catches the class of
+# bug that is cheap to catch early: shell syntax errors, shellcheck findings,
+# and drift between profiledef.sh's file_permissions list and what actually
+# ships in airootfs/ (a path renamed/removed on one side and not the other
+# fails silently at build or boot time, not at review time).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect Maze's own shell scripts
+        # Scoped deliberately: only scripts Maze itself owns and maintains.
+        # airootfs/ bundles third-party vendored trees (oh-my-zsh and its
+        # plugins) whose scripts are not ours to lint or fix.
+        shell: bash
+        run: |
+          {
+            find . -maxdepth 1 -iname '*.sh'
+            find tools -iname '*.sh'
+            find airootfs -type f \( -iname '*.sh' -o -iname '*.hook' -o -iname '*.install' \) ! -path '*oh-my-zsh*'
+            find airootfs/usr/local/bin airootfs/usr/local/share/maze airootfs/usr/share/maze -type f 2>/dev/null
+          } | sort -u > /tmp/candidates.txt
+          : > /tmp/scripts.txt
+          while read -r f; do
+            [[ -f "$f" ]] || continue
+            head -1 "$f" 2>/dev/null | grep -qE '^#!.*(bash|/bin/sh|/usr/bin/env (bash|sh))' && echo "$f" >> /tmp/scripts.txt
+          done < /tmp/candidates.txt
+          echo "Linting $(wc -l < /tmp/scripts.txt) scripts:"
+          cat /tmp/scripts.txt
+
+      - name: bash -n (syntax)
+        shell: bash
+        run: |
+          fail=0
+          while read -r f; do
+            if ! bash -n "$f" 2>/tmp/err; then
+              echo "::error file=$f::syntax error"
+              cat /tmp/err
+              fail=1
+            fi
+          done < /tmp/scripts.txt
+          exit "$fail"
+
+      - name: shellcheck
+        shell: bash
+        run: |
+          fail=0
+          while read -r f; do
+            # SC1091 (sourced files not found in CI): most of these scripts
+            # source nothing external; kept as a warning, not a failure, so a
+            # legitimate `source /etc/os-release`-style line doesn't fail CI.
+            if ! shellcheck --severity=warning --exclude=SC1091 "$f"; then
+              fail=1
+            fi
+          done < /tmp/scripts.txt
+          exit "$fail"
+
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: profiledef.sh file_permissions paths must exist in airootfs/
+        shell: bash
+        run: |
+          fail=0
+          # Extract the quoted keys of the file_permissions associative array.
+          # (for/mapfile, not `cmd | while read` — the latter runs the loop in
+          # a subshell, so an `exit` inside it would not fail this step.)
+          mapfile -t paths < <(grep -oE '^\s*\["[^"]+"\]=' profiledef.sh | grep -oE '"[^"]+"' | tr -d '"')
+          for p in "${paths[@]}"; do
+            if [[ ! -e "airootfs${p}" ]]; then
+              echo "::error file=profiledef.sh::${p} is listed in file_permissions but airootfs${p} does not exist"
+              fail=1
+            fi
+          done
+          exit "${fail}"
+
+      - name: packages.x86_64 has no duplicate package lines
+        shell: bash
+        run: |
+          # un-comment #MAZE-SKIP# entries FIRST (they are real package names
+          # build-aur.sh toggles), THEN drop true comments/blanks — the other
+          # order would delete the MAZE-SKIP lines before the sed ever saw
+          # them, so a package listed both skipped and active went undetected.
+          dupes="$(sed 's/^#MAZE-SKIP# //' packages.x86_64 | grep -vE '^\s*(#|$)' | sort | uniq -d)"
+          if [[ -n "${dupes}" ]]; then
+            echo "::error file=packages.x86_64::duplicate entries found:"
+            echo "${dupes}"
+            exit 1
+          fi
+
+      - name: pacman.conf defines the repos deploy-to-target.sh / build.sh expect
+        shell: bash
+        run: |
+          for repo in mazelinux maze-aur core extra multilib; do
+            grep -qF "[${repo}]" pacman.conf || { echo "::error file=pacman.conf::missing [${repo}] section"; exit 1; }
+          done

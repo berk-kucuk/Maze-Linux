@@ -9,7 +9,7 @@
 # lives in the build tree — keep keys/secureboot/Maze.key out of public hands.
 #
 # The INSTALLED system does NOT use this key; the installer generates a fresh
-# per-machine key at install time (see installer.py:_setup_secure_boot).
+# per-machine key at install time (see deploy-to-target.sh:setup_secure_boot).
 #
 # Run once (idempotent): existing keys are kept so every build stays consistent
 # and users never have to re-enroll. Pass -f to force regeneration.
