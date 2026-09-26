@@ -63,8 +63,8 @@ Stock releng ~100 paket; Maze **250**. Eklenenler dört gruba ayrılır:
 
 1. **Masaüstü** — KDE Plasma (Wayland), SDDM, Qt6/PySide6, ses/ağ yığını
 2. **Güvenlik/gizlilik** — `tor`, `i2pd`, `dnscrypt-proxy`, `clamav`,
-   `firejail`, `apparmor`, `nftables`, `usbguard`, `opensnitch`, `fail2ban`,
-   `rkhunter`, `audit`
+   `firejail`, `apparmor`, `nftables`, `usbguard`, `opensnitch`,
+   `rkhunter`, `audit` (fail2ban 2026-09'da çıkarıldı: yalnızca varsayılanda kapalı olan sshd'yi koruyordu)
 3. **Boot zinciri** — `sbsigntools`, `systemd-ukify`, `efibootmgr`, `shim`
    (AUR), `amd-ucode`, `intel-ucode`
 4. **Maze'in kendi paketleri** — `[mazelinux]` deposundan çekilir
@@ -102,9 +102,11 @@ ISO'nun kök dosya sistemine eklenenler:
 - **`etc/mkinitcpio.conf.d/archiso.conf`** — canlı ortam initramfs ayarları.
   Kurulumda hedeften temizlenir (aksi hâlde kurulu sistem archiso hook'larıyla
   açılmaya çalışır).
-- **`etc/maze/sentinel.conf`**, `etc/sddm.conf.d/`, `etc/plymouth/`,
-  `etc/firefox/`, `etc/audit/`, `etc/fail2ban/`, `etc/opensnitchd/`,
-  `etc/polkit-1/`, `etc/ssh/sshd_config.d/`, `etc/sudoers.d/10-maze`
+- `etc/sddm.conf.d/`, `etc/plymouth/`, `etc/firefox/`, `etc/opensnitchd/`,
+  `etc/polkit-1/`, `etc/sudoers.d/10-maze`. (2026-09: `etc/maze/sentinel.conf`,
+  `etc/audit/`, `etc/ssh/sshd_config.d/`, zram/oomd ayarları, `etc/kernel/install.conf`,
+  Plasma görünüm temaları, panik plasmoid'i, renk şemaları ve ikonlar airootfs'ten
+  ilgili paketlere taşındı — `backup=()` sayesinde kurulu sistemlerde çakışmasız.)
 - **`usr/local/share/maze/`** — canlı kullanıcı kurulumu, duvar kâğıdı,
   servis etkinleştirme betikleri
 
@@ -164,7 +166,7 @@ Maliyet:
 | `usr/bin/maze-boot-notify` | Girişte kritik masaüstü bildirimi |
 | `usr/bin/maze-kernel-install-add` | `kernel-install add` sarmalayıcısı |
 | `usr/lib/kernel/install.d/95-maze-sb-sign.install` | `kernel-install` eklentisi |
-| `85-maze-kernel-install.hook` | Çekirdek paketi değişince UKI üret |
+| `85-maze-kernel-install.hook` | Çekirdek değişince o çekirdeğin UKI'sini; initramfs içeriği (cryptsetup, mikrokod, firmware, systemd, Plymouth teması, systemd-stub) değişince tüm UKI'leri yeniden üret (1.2.0-19) |
 | `zz-maze-secureboot.hook` | İşlem sonunda imzala |
 | `zzz-maze-boot-verify.hook` | En sonda `maze-boot-check --quiet` |
 | `maze-sb-resign.path/.service` | ESP'de yeni UKI belirirse kendiliğinden imzala |
@@ -210,6 +212,32 @@ yaşanmış bir olay.
 | **Canlı USB** | Son çare | Çalışır |
 
 ---
+
+### 3.6 Anahtarlar ve güven (bilinen sınır)
+
+Maze'de iki Secure Boot anahtarı var:
+
+| Anahtar | Nerede | Neyi imzalar | Kim güvenir |
+|---|---|---|---|
+| **ISO anahtarı** (`Maze.key` / `Maze.cer`, CN=Maze Linux Secure Boot) | Yalnızca ISO'yu derleyen makinede (`MazeLinux/keys/secureboot`, git'e girmez, şifreli diskte, 0600) | Canlı ISO'nun UKI'si | Canlı ISO'yu Secure Boot açıkken bir kez açıp MokManager'da `Maze.cer`'i kaydeden her makine |
+| **Makine anahtarı** (`/var/lib/maze-secureboot/MOK.*`, CN=… machine key) | Yalnızca o kurulumun kök diski (LUKS'ta şifreli), 0600 | O makinenin UKI'leri | Yalnızca o makine |
+
+**Bilinen sınır:** ISO anahtarı kurulumdan sonra MOK listesinde kalır. Kurulu sistem ona ihtiyaç duymaz, ama firmware onunla imzalanmış her şeye güvenmeye devam eder. `Maze.key` sızarsa, ISO'yu bir kez açmış her Maze makinesine Secure Boot'tan geçen bir açılış imajı hazırlanabilir. LUKS'lu kurulumda bu, fiziksel erişimle parola ekranının değiştirilmesi ("evil maid") anlamına gelir.
+
+Kurulumda bilerek kaldırılmıyor:
+- MOK'tan anahtar silmek, bir sonraki açılışta MokManager'da parola ve onay ister. Maze'in "kurulumda korkutucu MOK adımı yok" ilkesiyle çelişir.
+- Kullanıcı canlı USB'yi Secure Boot açıkken tekrar açarsa anahtarı yeniden kaydetmesi gerekir.
+
+**Korunma buna dayanıyor:** `Maze.key` asla paylaşılmaz, git'e ve yedek arşivlerine şifresiz girmez.
+
+**Kendi makinesinden kaldırmak isteyen kullanıcı için** (yalnızca bu anahtar silinir, diğer MOK anahtarlarına ve firmware anahtarlarına dokunulmaz):
+
+    # Maze canlı USB takılıyken: ISO anahtarının sertifikası USB'nin kökündeki MOK.cer
+    sudo mokutil --delete /run/media/$USER/<USB>/MOK.cer
+    # Tek kullanımlık bir parola sorar. Yeniden başlatınca MokManager'da:
+    # "Delete MOK" → anahtarı seç → parolayı gir → onayla.
+
+`maze-audit --deep` bölüm 17, kayıtlı MOK anahtarlarını sayar ve ISO anahtarını ayrıca gösterir.
 
 ## 4. Paket envanteri
 
@@ -276,7 +304,7 @@ ve BIOS/fiziksel sürgü/firmware'e yönlendirir.
 | `hazedrop` | Tor üzerinden uçtan uca şifreli dosya transferi (ChaCha20-Poly1305, Argon2id) | ✅ |
 | `maze-ai` | **Yerel** LLM asistanı (Ollama, `llama3.1`) — hiçbir veri makineden çıkmaz | ✅ |
 | `maze-connect` | PC↔Android bağlantı | ✅ |
-| `said360` | KDE plasmoid | ✅ |
+| `said360` | KDE plasmoid (1.5.0-2 itibarıyla varsayılan değil) | ❌ opsiyonel |
 | `sentinai` | OSINT + parola listesi üretimi (Gemini veya Ollama) | ❌ opsiyonel |
 | `linux-chan-ai` | Anime karakterli asistan (**yalnızca Google Gemini**) | ❌ opsiyonel |
 

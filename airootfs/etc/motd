@@ -1,13 +1,15 @@
 
-Welcome to Maze Linux — a lightweight Arch-based live and install medium.
+Welcome to Maze Linux — live and install medium.
+
+The desktop runs as the live user `maze`; the text console (tty1) logs in as
+`root`. Neither account has a password, and sudo needs none. Nothing you do
+here is kept after a reboot.
 
 To install Maze Linux:
-  - Connect to the internet first (Ethernet/WLAN/WWAN via DHCP works
-    automatically; use `iwctl` for Wi-Fi, `mmcli` for mobile broadband).
-  - Then launch the graphical installer:  maze-calamares
-    (or use the "Install Maze Linux" icon on the desktop / panel)
-
-The default user is `root` (no password on the live medium).
+  - Connect to the internet first: the network icon in the panel, or `nmtui` /
+    `nmcli` in a terminal (Ethernet via DHCP connects automatically).
+  - Then launch the graphical installer: the "Install Maze Linux" icon in the
+    dock, or `maze-calamares`.
 
 Get your bearings any time with:  mazelinux --welcome   (or --status / --help)
 

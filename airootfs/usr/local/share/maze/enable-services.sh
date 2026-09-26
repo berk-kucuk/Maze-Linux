@@ -11,7 +11,6 @@ SERVICES=(
     apparmor.service
     auditd.service
     firewalld.service
-    fail2ban.service
     opensnitchd.service
     # Anonymity (Tor SOCKS proxy on 127.0.0.1:9050; used by torsocks/torbrowser)
     tor.service

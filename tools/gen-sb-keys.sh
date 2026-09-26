@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # gen-sb-keys.sh — Generate the Maze Linux Secure Boot signing key used to sign
-# the LIVE ISO's bootloader (systemd-boot) and kernel.
+# the LIVE ISO's Unified Kernel Image (shim's second stage, grubx64.efi).
 #
 # This is the SHARED, distro-wide key. Its public certificate (Maze.cer) is what
 # a user enrolls once via MokManager when booting the live ISO with UEFI Secure
@@ -57,6 +57,6 @@ chmod 600 "${KEY}"
 chmod 644 "${CRT}" "${CER}"
 
 echo ">> Done."
-echo "   Private key : ${KEY}   (keep secret; signs the ISO bootloader+kernel)"
+echo "   Private key : ${KEY}   (keep secret; signs the ISO's UKI)"
 echo "   Certificate : ${CRT}"
 echo "   Enroll cert : ${CER}   (shipped on the ISO ESP for MokManager)"

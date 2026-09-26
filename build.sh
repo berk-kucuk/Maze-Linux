@@ -19,6 +19,9 @@
 # Every run is transcribed to MazeLinux/logs/build-<timestamp>.log while still
 # printing to the terminal. Set MAZE_BUILD_LOG=0 to turn that off.
 #
+# A failed build releases a tmpfs work directory (it is RAM); set
+# MAZE_KEEP_WORK=1 to keep it for inspection.
+#
 set -euo pipefail
 
 PROFILE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -107,51 +110,68 @@ if ! ls "${PROFILE_DIR}/localrepo/maze-aur.db".* >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pre-flight: report which published packages ./localrepo will OVERRIDE.
+# Pre-flight: report every repo package ./localrepo will OVERRIDE.
 #
-# pacman.conf lists [maze-aur] (./localrepo) BEFORE [mazelinux] on purpose, and
-# pacman resolves a name from the first repo that carries it WITHOUT comparing
-# versions across repos. That makes ./localrepo a staging area — a freshly built
-# package dropped there ships in the next ISO instead of the published one, so a
-# new version can be proven in a real ISO before it is pushed to the public repo.
+# pacman.conf lists [maze-aur] (./localrepo) FIRST — before [mazelinux] and the
+# official repos — on purpose, and pacman resolves a name from the first repo
+# that carries it WITHOUT comparing versions across repos. That makes
+# ./localrepo a staging area — a freshly built package dropped there ships in
+# the next ISO instead of the published one, so a new version can be proven in
+# a real ISO before it is pushed to the public repo.
 #
 # The same rule means a stale file left in ./localrepo would silently ship in
-# place of the published package (this has bitten before: an ancient
-# entropy-shield/haze/sentinai set sat there for months). So never let it be
-# silent — list every override, every build, and say what is being replaced.
+# place of the repo package (this has bitten before: an ancient
+# entropy-shield/haze/sentinai set sat there for months), and a package there
+# that shares a name with a core/extra one would replace THAT without a word.
+# So never let it be silent — list every override, every build.
+#
+# The comparison uses the PROFILE's pacman.conf (minus [maze-aur] itself) with a
+# throwaway DBPath, synced right now: the build host's own pacman.conf may not
+# carry [mazelinux] at all, and its sync databases may be days old — either of
+# which made the old host-based check report "overrides nothing" while it did.
 # ---------------------------------------------------------------------------
-if command -v expac >/dev/null 2>&1 || command -v pacman >/dev/null 2>&1; then
-    _overrides=()
-    for _pkgfile in "${PROFILE_DIR}"/localrepo/*.pkg.tar.*; do
-        [[ -e "${_pkgfile}" ]] || continue
+check_localrepo_overrides() {
+    local db conf pkgfile info name ver line repo rname rver
+    local -A repo_of=()
+    local overrides=()
+    db="$(mktemp -d --tmpdir maze-repocheck.XXXXXX)"
+    conf="${db}/pacman.conf"
+    awk '/^\[maze-aur\]/{skip=1; next} /^\[/{skip=0} !skip' "${PROFILE_DIR}/pacman.conf" > "${conf}"
+    if ! pacman --config "${conf}" --dbpath "${db}" -Sy >/dev/null 2>&1; then
+        echo "Warning: could not sync the profile's repos; the ./localrepo override check was skipped." >&2
+        rm -rf "${db}"
+        return 0
+    fi
+    # "repo name version [installed]" for every package, in config (= pacman's
+    # resolution) order; the first repo that carries a name is the one it wins.
+    while read -r repo rname rver _; do
+        [[ -n "${rname}" && -z "${repo_of[${rname}]+x}" ]] && repo_of["${rname}"]="${repo} ${rver}"
+    done < <(pacman --config "${conf}" --dbpath "${db}" -Sl 2>/dev/null)
+    rm -rf "${db}"
+
+    for pkgfile in "${PROFILE_DIR}"/localrepo/*.pkg.tar.*; do
+        [[ -e "${pkgfile}" && "${pkgfile}" != *.sig ]] || continue
         # Read the name/version from the package itself; filename parsing breaks
         # on epochs (e.g. foo-1:2.3-1-x86_64.pkg.tar.zst).
-        _l="$(pacman -Qip "${_pkgfile}" 2>/dev/null)" || continue
-        _n="$(printf '%s\n' "${_l}" | awk -F': +' '/^Name +:/{print $2; exit}')"
-        _v="$(printf '%s\n' "${_l}" | awk -F': +' '/^Version +:/{print $2; exit}')"
-        [[ -n "${_n}" ]] || continue
-        # Is this name also published in [mazelinux]? If so, the local copy wins.
-        # `|| true` is load-bearing: this script runs under `set -euo pipefail`,
-        # and pacman -Si exits non-zero for any name that is in NO repo (every
-        # AUR package in ./localrepo — calamares, upscayl-bin, shim-signed...).
-        # With pipefail that failure propagates out of the pipeline, the
-        # assignment fails, and set -e would kill the whole build silently — no
-        # output at all, which is exactly what it did before this guard.
-        _pub="$( { pacman -Si "${_n}" 2>/dev/null || true; } \
-                 | awk -F': +' '/^Repository +: +mazelinux$/{f=1} f&&/^Version +:/{print $2; exit}')"
-        [[ -n "${_pub}" ]] && _overrides+=("${_n}  ${_v}  (published: ${_pub})")
+        info="$(pacman -Qip "${pkgfile}" 2>/dev/null)" || continue
+        name="$(awk -F': +' '/^Name +:/{print $2; exit}' <<<"${info}")"
+        ver="$(awk -F': +' '/^Version +:/{print $2; exit}' <<<"${info}")"
+        [[ -n "${name}" && -n "${repo_of[${name}]+x}" ]] || continue
+        line="${repo_of[${name}]}"
+        overrides+=("${name}  ${ver}  (${line%% *}: ${line#* })")
     done
-    if [[ ${#_overrides[@]} -gt 0 ]]; then
+    if [[ ${#overrides[@]} -gt 0 ]]; then
         echo
-        echo "   >> local repo OVERRIDES ${#_overrides[@]} published package(s):"
-        printf '        %s\n' "${_overrides[@]}"
-        echo "      The ISO will ship the ./localrepo copies, NOT the published ones."
+        echo "   >> local repo OVERRIDES ${#overrides[@]} repo package(s):"
+        printf '        %s\n' "${overrides[@]}"
+        echo "      The ISO will ship the ./localrepo copies, NOT the repo ones."
         echo "      Intended for testing before publishing — remove the files to undo."
         echo
     else
-        echo "   Local repo    : OK (overrides nothing published in [mazelinux])"
+        echo "   Local repo    : OK (overrides no package in the profile's repos)"
     fi
-fi
+}
+check_localrepo_overrides
 
 # packages.x86_64 pulls `mazelinux-keyring` and `maze-meta` from the remote
 # [mazelinux] repo (SigLevel = Required) — neither is in ./localrepo, so there is
@@ -264,7 +284,24 @@ restore_pacman_conf() {
     fi
     return 0
 }
-_cleanup() { restore_pacman_conf; [[ -n "${PATCHED_MKARCHISO}" ]] && rm -f "${PATCHED_MKARCHISO}"; return 0; }
+# Set once the build has started writing to WORKDIR (see below).
+MAZE_WORK_STARTED=0
+_cleanup() {
+    local rc=$?
+    restore_pacman_conf
+    [[ -n "${PATCHED_MKARCHISO}" ]] && rm -f "${PATCHED_MKARCHISO}"
+    # A FAILED build on a tmpfs work directory would otherwise pin ~16 GiB of RAM
+    # until someone notices (the success path releases it itself). A failed build
+    # on a real disk is still left alone for inspection. MAZE_KEEP_WORK=1 keeps
+    # the tmpfs copy too, when the failure needs a post-mortem.
+    if [[ "${rc}" -ne 0 && "${MAZE_WORK_STARTED}" -eq 1 && "${MAZE_KEEP_WORK:-0}" != "1" ]] \
+       && [[ "$(findmnt -no FSTYPE --target "${WORKDIR}" 2>/dev/null)" == "tmpfs" ]]; then
+        echo ">> Build failed; releasing the tmpfs (RAM) work directory ${WORKDIR}" >&2
+        echo "   (set MAZE_KEEP_WORK=1 to keep it for inspection next time)" >&2
+        ( clean_workdir "${WORKDIR}" ) || true
+    fi
+    return 0
+}
 trap _cleanup EXIT
 if grep -qE '^\s*Server\s*=\s*file://.*/localrepo' "${PACMAN_CONF}"; then
     cp -a "${PACMAN_CONF}" "${PACMAN_CONF}.bak"
@@ -422,7 +459,24 @@ _maze_sb_sign_esp() {
     # Kernel command line — must match efiboot/loader/entries/01-archiso-linux.conf
     # verbatim (modulo the placeholders, which mkarchiso already substituted into
     # ${install_dir} and ${iso_uuid} by the time this runs).
-    local cmdline="archisobasedir=${install_dir} archisosearchuuid=${iso_uuid} quiet splash bgrt_disable logo.nologo lsm=landlock,lockdown,yama,integrity,apparmor,bpf apparmor=1 security=apparmor"
+    #
+    # copytoram=n: archiso's default is "auto", which copies the whole rootfs
+    # image into RAM before booting whenever it is under 4 GiB and RAM allows —
+    # minutes of a blank Plymouth splash (the progress goes to the hidden text
+    # console) and ~4 GiB of RAM held for the whole session. It also unmounts
+    # the medium afterwards. An installer medium stays plugged in anyway, so
+    # boot straight from it.
+    #
+    # systemd.tpm2_measured_os=0: the live system must not write to the
+    # machine's TPM. With measured boot on (automatic under systemd-stub),
+    # systemd-tpm2-setup persists an SRK and (systemd >= 262) an Endorsement
+    # Key into the TPM of whatever machine the stick is booted on, and tries to
+    # set up NvPCRs — which cannot work on an archiso initrd anyway, so the live
+    # session would also show failed units. A live medium leaving state in the
+    # TPM is simply wrong for a privacy distro. The installed system's cmdline
+    # is written separately (maze-installer 70-cmdline-uki) and keeps measured
+    # boot; maze-secureboot skips only its NvPCR units there.
+    local cmdline="archisobasedir=${install_dir} archisosearchuuid=${iso_uuid} copytoram=n systemd.tpm2_measured_os=0 quiet splash bgrt_disable logo.nologo lsm=landlock,lockdown,yama,integrity,apparmor,bpf apparmor=1 security=apparmor"
 
     # Build the UKI. --cmdline=@file would be safer for weird chars, but the
     # archiso cmdline has none; passing it inline is fine and avoids quoting
@@ -596,6 +650,7 @@ release_tmpfs_workdir() {
 
 # Start from a clean work directory; a leftover root from a failed run causes
 # "conflicting files" errors on the next build.
+MAZE_WORK_STARTED=1
 clean_workdir "${WORKDIR}"
 mkdir -p "${WORKDIR}" "${OUTDIR}"
 

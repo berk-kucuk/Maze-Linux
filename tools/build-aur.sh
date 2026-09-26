@@ -54,6 +54,11 @@ OPTIONAL=(
     session-desktop-bin
     joplin-bin
     claude-code
+    # paru — AUR helper, shipped on the ISO so the installer does not have to
+    # compile it (Rust) at install time. Built from source, never paru-bin: it
+    # links the libalpm of this build, which is the one the ISO ships. Rebuild
+    # it whenever pacman's libalpm soname changes, or paru stops starting.
+    paru
     # Calamares installer (live ISO only). Not in the official repos, so it is
     # built from the AUR here. Heavy build (KPMcore/Qt6/KF6). Optional during
     # bring-up so a build hiccup never blocks the ISO; once stable, promote to
@@ -120,19 +125,58 @@ else
     arch-nspawn "${CHROOT}/root" pacman -Sy --needed --noconfirm "${CHROOT_EXTRA[@]}"
 fi
 
+# pkg_field <package-file> <Name|Version> — read a field from the package
+# itself (filename parsing breaks on epochs and on names that contain dashes).
+pkg_field() {
+    pacman -Qip "$1" 2>/dev/null | awk -F': +' -v k="$2" '$1 ~ ("^" k " *$") {print $2; exit}'
+}
+
+# srcinfo_version <clone-dir> — "[epoch:]pkgver-pkgrel" the AUR currently ships,
+# from the .SRCINFO the git pull above just updated (empty if unknown).
+srcinfo_version() {
+    [[ -f "$1/.SRCINFO" ]] || return 0
+    awk -F' = ' '/^\t(epoch|pkgver|pkgrel) = /{ sub(/^\t/, "", $1); v[$1] = $2 }
+        END { if (v["pkgver"] != "" && v["pkgrel"] != "")
+                  printf "%s%s-%s\n", (v["epoch"] != "" ? v["epoch"] ":" : ""), v["pkgver"], v["pkgrel"] }' "$1/.SRCINFO"
+}
+
+# index_localrepo — fill LOCAL_FILE[name] / LOCAL_VER[name] with the NEWEST file
+# per package name in ./localrepo (signatures skipped).
+declare -A LOCAL_FILE=() LOCAL_VER=()
+index_localrepo() {
+    local f n v
+    LOCAL_FILE=(); LOCAL_VER=()
+    for f in "${LOCALREPO}"/*.pkg.tar.*; do
+        [[ -e "${f}" && "${f}" != *.sig ]] || continue
+        n="$(pkg_field "${f}" Name)"; v="$(pkg_field "${f}" Version)"
+        [[ -n "${n}" && -n "${v}" ]] || continue
+        if [[ -z "${LOCAL_VER[${n}]+x}" ]] || (( $(vercmp "${v}" "${LOCAL_VER[${n}]}") > 0 )); then
+            LOCAL_FILE["${n}"]="${f}"; LOCAL_VER["${n}"]="${v}"
+        fi
+    done
+}
+
 echo ">> Building packages in the chroot"
 remaining=("${PACKAGES[@]}")
 built_files=()
-# Pre-seed built_files with packages already present in the local repo so reruns
-# do not rebuild them (delete ./localrepo to force a full rebuild).
+# Pre-seed built_files with packages already in the local repo so reruns do not
+# rebuild them — UNLESS the AUR now ships a NEWER version. Skipping on mere
+# presence (the old rule) froze every package at its first build: upstream
+# security fixes for the bundled Electron apps never reached the ISO. A local
+# copy that is newer than the AUR (a locally bumped pkgrel) is kept as is.
+# Delete ./localrepo to force a full rebuild.
+index_localrepo
 already=()
 for pkg in "${PACKAGES[@]}"; do
-    f=$(ls "${LOCALREPO}/${pkg}"-*.pkg.tar.* 2>/dev/null | head -n1 || true)
-    if [[ -n "${f}" ]]; then
-        echo "   already built: ${pkg}"
-        built_files+=("${f}")
-        already+=("${pkg}")
+    [[ -n "${LOCAL_FILE[${pkg}]+x}" ]] || continue
+    aur_ver="$(srcinfo_version "${BUILDDIR}/${pkg}")"
+    if [[ -n "${aur_ver}" ]] && (( $(vercmp "${aur_ver}" "${LOCAL_VER[${pkg}]}") > 0 )); then
+        echo "   outdated: ${pkg} ${LOCAL_VER[${pkg}]} -> ${aur_ver} (rebuilding)"
+        continue
     fi
+    echo "   already built: ${pkg} ${LOCAL_VER[${pkg}]}"
+    built_files+=("${LOCAL_FILE[${pkg}]}")
+    already+=("${pkg}")
 done
 # remove already-built from the work list
 tmp=(); for pkg in "${remaining[@]}"; do
@@ -157,8 +201,23 @@ while [[ ${#remaining[@]} -gt 0 && ${pass} -lt ${MAXPASS} ]]; do
             for f in "${built_files[@]}"; do inject+=(-I "${f}"); done
         fi
         if ( cd "${BUILDDIR}/${pkg}" && makechrootpkg -c -r "${CHROOT}" "${inject[@]}" ); then
+            index_localrepo
             for f in "${BUILDDIR}/${pkg}"/*.pkg.tar.*; do
-                [[ -e "${f}" ]] || continue
+                [[ -e "${f}" && "${f}" != *.sig ]] || continue
+                n="$(pkg_field "${f}" Name)"
+                # makepkg's default OPTIONS=(debug) emits <pkg>-debug split
+                # packages; nothing installs them, so keep them out of the repo.
+                if [[ "${n}" == *-debug ]]; then
+                    rm -f "${f}"
+                    continue
+                fi
+                # Retire the previous build of this package so exactly one
+                # version remains (repo-add would otherwise index whichever
+                # file sorts last, which is not necessarily the newest).
+                if [[ -n "${n}" && -n "${LOCAL_FILE[${n}]+x}" ]]; then
+                    echo "   replacing ${n} ${LOCAL_VER[${n}]} in ./localrepo"
+                    rm -f "${LOCAL_FILE[${n}]}" "${LOCAL_FILE[${n}]}.sig"
+                fi
                 mv -f "${f}" "${LOCALREPO}/"
                 built_files+=("${LOCALREPO}/$(basename "${f}")")
             done
@@ -198,7 +257,14 @@ done
 
 echo ">> Creating local repository database (${DBNAME})"
 rm -f "${LOCALREPO}/${DBNAME}".db* "${LOCALREPO}/${DBNAME}".files*
-repo-add "${LOCALREPO}/${DBNAME}.db.tar.zst" "${LOCALREPO}"/*.pkg.tar.*
+# Index packages only: no detached signatures, no -debug split packages.
+repo_files=()
+for f in "${LOCALREPO}"/*.pkg.tar.*; do
+    [[ -e "${f}" && "${f}" != *.sig ]] || continue
+    [[ "$(pkg_field "${f}" Name)" == *-debug ]] && continue
+    repo_files+=("${f}")
+done
+repo-add "${LOCALREPO}/${DBNAME}.db.tar.zst" "${repo_files[@]}"
 
 echo ">> Done."
 echo "   Local repo: ${LOCALREPO}"

@@ -18,7 +18,10 @@ broadcom-wl-dkms
 dkms
 btrfs-progs
 clonezilla
-cloud-init
+# cloud-init was REMOVED (inherited from archiso releng). Its NoCloud datasource
+# runs the user-data of ANY attached block device labelled CIDATA as root at
+# boot, so a prepared USB stick could take over the live session; a desktop
+# live/install medium has no cloud datasource to serve.
 cryptsetup
 darkhttpd
 ddrescue
@@ -276,7 +279,9 @@ wireguard-tools
 clamav
 clamtk
 firewalld
-fail2ban
+# fail2ban removed: it only guards sshd, which Maze ships disabled, so it
+# protected nothing — and being tied to firewalld it went down with it and
+# counted as a failed security service. Install it with sshd if you enable SSH.
 apparmor
 audit
 lynis
@@ -353,6 +358,12 @@ upscayl-bin
 session-desktop-bin
 joplin-bin
 claude-code
+# paru — the AUR helper. Built from source against the same pacman/libalpm the
+# ISO ships (so no ABI mismatch), instead of being compiled at install time
+# (~3.5 min, Rust toolchain download, network-dependent). The installer's AUR
+# step sees it already installed and skips it; it only builds paru when this
+# line is missing.
+paru
 # Calamares graphical installer (live ISO only). Built from the AUR by
 # build-aur.sh; Maze's own config + branding are shipped by the maze-installer
 # package from [mazelinux].

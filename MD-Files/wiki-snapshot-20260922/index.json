@@ -1,0 +1,21 @@
+[
+  { "slug": "Home",           "title": "Overview",           "file": "/wiki/Home.md" },
+  { "slug": "Installation",   "title": "Installation Guide", "file": "/wiki/Installation.md" },
+  { "slug": "FirstBoot",      "title": "First Boot / MOK",   "file": "/wiki/FirstBoot.md" },
+  { "slug": "VirtualMachine", "title": "Virtual Machine",    "file": "/wiki/VirtualMachine.md" },
+  { "slug": "After-Install",  "title": "After Install",      "file": "/wiki/After-Install.md" },
+  { "slug": "Recovery",       "title": "Won't Boot?",        "file": "/wiki/Recovery.md" },
+  { "slug": "Updating",       "title": "Updating",           "file": "/wiki/Updating.md" },
+  { "slug": "Snapshots",      "title": "Snapshots & Rollback","file": "/wiki/Snapshots.md" },
+  { "slug": "Kernels",        "title": "Kernel Management",  "file": "/wiki/Kernels.md" },
+  { "slug": "Diagnostics",    "title": "Diagnostics",        "file": "/wiki/Diagnostics.md" },
+  { "slug": "Hardware",       "title": "Kill Switches",      "file": "/wiki/Hardware.md" },
+  { "slug": "Tools",          "title": "Tools & Apps",       "file": "/wiki/Tools.md" },
+  { "slug": "MazeConnect",    "title": "Maze Connect",       "file": "/wiki/MazeConnect.md" },
+  { "slug": "Security",       "title": "Security Reference", "file": "/wiki/Security.md" },
+  { "slug": "Privacy",        "title": "Privacy Reference",  "file": "/wiki/Privacy.md" },
+  { "slug": "SecureBoot",     "title": "Secure Boot",        "file": "/wiki/SecureBoot.md" },
+  { "slug": "AI-Dev",         "title": "AI & Development",   "file": "/wiki/AI-Dev.md" },
+  { "slug": "FAQ",            "title": "FAQ",                "file": "/wiki/FAQ.md" },
+  { "slug": "Limitations",    "title": "Known Limitations",  "file": "/wiki/Limitations.md" }
+]

@@ -58,9 +58,14 @@ printf '%s== Maze Linux — installing AUR applications ==%s\n\n' "${c_acc}" "${
 [[ -f "${MARKER}" ]] && { echo "Already completed."; rm -f "${AUTOSTART}"; exit 0; }
 
 echo "Waiting for an internet connection..."
+# HTTPS to the hosts this script actually uses — not ICMP, which many networks
+# (and firewall rules) drop even when the web works fine.
 connected=0
 for _ in $(seq 1 18); do
-    if ping -c1 -W2 archlinux.org >/dev/null 2>&1; then connected=1; break; fi
+    if curl -fsS --max-time 5 -o /dev/null https://aur.archlinux.org \
+       || curl -fsS --max-time 5 -o /dev/null https://archlinux.org; then
+        connected=1; break
+    fi
     sleep 5
 done
 if [[ "${connected}" -ne 1 ]]; then
@@ -69,25 +74,32 @@ if [[ "${connected}" -ne 1 ]]; then
     exit 1
 fi
 
-# Build each package directly with makepkg and install it with
-# pacman -U --overwrite (the same method the installer uses), which tolerates
-# leftover files from an earlier partial install. 'paru' is built from source so
-# it matches this system's libalpm ABI (the precompiled paru-bin can break after
-# a pacman soname bump). The network-bound steps are retried.
-echo "Installing the latest Maze applications..."
-retry 3 sudo pacman -Sy --noconfirm --needed base-devel git || true
+# Build each package directly with makepkg and install it with pacman -U (the
+# same method the installer uses). 'paru' is built from source so it matches
+# this system's libalpm ABI (the precompiled paru-bin can break after a pacman
+# soname bump). The network-bound steps are retried.
+#
+# Full system upgrade first: installing (or building against) packages from
+# freshly synced databases on a system that is NOT upgraded is a partial
+# upgrade, which Arch does not support and which can break installed programs.
+echo "Updating the system (pacman -Syu)..."
+if ! retry 3 sudo pacman -Syu --noconfirm --needed base-devel git; then
+    printf '%sSystem update failed%s (see %s). Fix it with %ssudo pacman -Syu%s, then run %smaze-aur-setup%s again.\n' \
+        "${c_warn}" "${c_reset}" "${VLOG}" "${c_acc}" "${c_reset}" "${c_acc}" "${c_reset}"
+    exit 1
+fi
 
 # Clone, build and install one AUR package by name. Returns 0 on success.
 build_one() {
     local pkg="$1" tmp ok=1
     tmp="$(mktemp -d)"
     if retry 3 git clone --depth 1 "https://aur.archlinux.org/${pkg}.git" "${tmp}/${pkg}" \
-        && retry 2 bash -c "cd '${tmp}/${pkg}' && makepkg -s --noconfirm --needed"; then
+        && retry 2 bash -c 'cd "$1" && makepkg -s --noconfirm --needed' _ "${tmp}/${pkg}"; then
         shopt -s nullglob
         local pkgfiles=("${tmp}/${pkg}"/*.pkg.tar.*)
         shopt -u nullglob
         if [[ ${#pkgfiles[@]} -gt 0 ]] \
-            && retry 2 sudo pacman -U --noconfirm --needed --overwrite '*' "${pkgfiles[@]}"; then
+            && retry 2 sudo pacman -U --noconfirm --needed "${pkgfiles[@]}"; then
             ok=0
         fi
     fi
@@ -98,7 +110,8 @@ build_one() {
 failed=()
 
 # Maze's own applications: install from the [mazelinux] repo with pacman -S
-# (refresh + install, retried). Only the third-party AUR apps below are built.
+# (the databases were refreshed by the -Syu above; retried). Only the
+# third-party AUR apps below are built.
 printf '%s:: Installing Maze applications from the [mazelinux] repo...%s\n' "${c_acc}" "${c_reset}"
 # Only the ones that are MISSING: `pacman -S --needed` skips an exact version
 # match only, and would DOWNGRADE an installed app that is newer than the repo's
@@ -109,7 +122,7 @@ for _p in "${MAZE_REPO_PKGS[@]}"; do
 done
 if [[ ${#MAZE_REPO_MISSING[@]} -eq 0 ]]; then
     printf '   -> every Maze application is already installed; nothing to do here.\n'
-elif retry 3 sudo pacman -Sy --noconfirm --needed "${MAZE_REPO_MISSING[@]}"; then
+elif retry 3 sudo pacman -S --noconfirm --needed "${MAZE_REPO_MISSING[@]}"; then
     printf '   -> Maze applications installed: %s\n' "${MAZE_REPO_MISSING[*]}"
 else
     printf '%s   -> ERROR: some Maze applications failed (see %s).%s\n' "${c_warn}" "${VLOG}" "${c_reset}"

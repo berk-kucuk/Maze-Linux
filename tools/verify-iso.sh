@@ -42,26 +42,50 @@ done
 [[ -n "${TARGET}" ]] || { echo "kullanim: $0 <iso|iso-agaci> [--cert <crt>]" >&2; exit 2; }
 [[ -e "${TARGET}" ]] || { echo "bulunamadi: ${TARGET}" >&2; exit 2; }
 
-for t in objcopy bsdtar; do
+for t in objcopy objdump bsdtar sbverify; do
     command -v "$t" >/dev/null 2>&1 || { echo "gerekli arac yok: $t" >&2; exit 2; }
 done
 
 # --- ESP dosyalarını eriş ------------------------------------------------
-# ISO ise gerekli dosyaları geçici dizine çıkar; dizinse doğrudan kullan.
+# ISO ise: firmware'in GERÇEKTEN boot ettiği şey ISO9660 ağacı değil, ISO'ya
+# eklenen FAT ESP bölümüdür (GPT tipi C12A7328-…, El Torito UEFI imajı da aynı
+# bloklara işaret eder). _maze_sb_sign_esp iki kopyayı ayrı ayrı yazar (mcopy →
+# FAT, install → ISO9660), dolayısıyla asıl kontroller FAT'ten okunan dosyalarla
+# yapılır; ISO9660 kopyasının onunla birebir aynı olduğu ayrıca doğrulanır.
+# Dizin verilirse (work/iso) doğrudan o kullanılır.
 TMP="$(mktemp -d)"
 ESP=""
 ISO_MODE=0
+ESP_FILES=(EFI/BOOT/BOOTx64.EFI EFI/BOOT/grubx64.efi EFI/BOOT/mmx64.efi MOK.cer)
 if [[ -d "${TARGET}" ]]; then
     ESP="${TARGET}"
     hdr "Kaynak: ISO ağacı — ${TARGET}"
 else
     ISO_MODE=1
     hdr "Kaynak: ISO — ${TARGET} ($(du -h "${TARGET}" | cut -f1))"
-    for f in EFI/BOOT/BOOTx64.EFI EFI/BOOT/grubx64.efi EFI/BOOT/mmx64.efi MOK.cer; do
-        mkdir -p "${TMP}/$(dirname "$f")"
-        bsdtar xOf "${TARGET}" "$f" > "${TMP}/$f" 2>/dev/null || rm -f "${TMP}/$f"
+    for t in sfdisk mcopy; do
+        command -v "$t" >/dev/null 2>&1 || { echo "gerekli arac yok: $t" >&2; exit 2; }
     done
-    ESP="${TMP}"
+    # ISO9660 kopyası
+    for f in "${ESP_FILES[@]}"; do
+        mkdir -p "${TMP}/iso9660/$(dirname "$f")"
+        bsdtar xOf "${TARGET}" "$f" > "${TMP}/iso9660/$f" 2>/dev/null || rm -f "${TMP}/iso9660/$f"
+    done
+    # FAT ESP bölümü: başlangıç sektörü × sektör boyutu = bayt ofseti (mtools
+    # "dosya@@ofset" sözdizimi ile bağlamadan okunur, root gerekmez).
+    esp_start="$(sfdisk -d "${TARGET}" 2>/dev/null \
+        | awk -F'[:,]' 'tolower($0) ~ /type= *(c12a7328-f81f-11d2-ba4b-00a0c93ec93b|ef)(,|$)/ {
+              for (i = 1; i <= NF; i++) if ($i ~ /start=/) { gsub(/[^0-9]/, "", $i); print $i; exit } }')"
+    esp_ssz="$(sfdisk -d "${TARGET}" 2>/dev/null | awk -F': *' '/^sector-size:/{print $2; exit}')"
+    mkdir -p "${TMP}/esp"
+    if [[ -n "${esp_start}" ]]; then
+        for f in "${ESP_FILES[@]}"; do
+            mkdir -p "${TMP}/esp/$(dirname "$f")"
+            mcopy -n -i "${TARGET}@@$(( esp_start * ${esp_ssz:-512} ))" "::/$f" "${TMP}/esp/$f" 2>/dev/null \
+                || rm -f "${TMP}/esp/$f"
+        done
+    fi
+    ESP="${TMP}/esp"
 fi
 
 BOOTX="${ESP}/EFI/BOOT/BOOTx64.EFI"
@@ -74,6 +98,13 @@ has()   { objdump -h "$1" 2>/dev/null | grep -qE "[[:space:]]$2[[:space:]]"; }
 
 # --- 1. ESP düzeni -------------------------------------------------------
 hdr "1. ESP düzeni"
+if (( ISO_MODE )); then
+    if [[ -n "${esp_start}" ]]; then
+        ok "ISO'da FAT ESP bölümü var (sektör ${esp_start}) — kontroller firmware'in okuduğu bu kopyada"
+    else
+        bad "ISO'da EFI System Partition bulunamadı — USB/CD'den UEFI boot edemez"
+    fi
+fi
 [[ -s "${BOOTX}" ]] && ok "BOOTx64.EFI var ($(du -h "${BOOTX}" | cut -f1))" \
                     || bad "BOOTx64.EFI yok — firmware açacak bir şey bulamaz"
 [[ -s "${GRUB}"  ]] && ok "grubx64.efi var ($(du -h "${GRUB}" | cut -f1))" \
@@ -97,6 +128,27 @@ if [[ -s "${GRUB}" ]]; then
     for s in .linux .initrd .cmdline .osrel; do has "${GRUB}" "$s" || miss="${miss} $s"; done
     if [[ -z "${miss}" ]]; then ok "grubx64.efi geçerli bir UKI (.linux .initrd .cmdline .osrel)"
     else bad "grubx64.efi UKI değil — eksik bölüm:${miss}"; fi
+fi
+
+if (( ISO_MODE )); then
+    for f in "${ESP_FILES[@]}"; do
+        if [[ -f "${TMP}/esp/$f" && -f "${TMP}/iso9660/$f" ]]; then
+            cmp -s "${TMP}/esp/$f" "${TMP}/iso9660/$f" \
+                && ok "$f: ESP ve ISO9660 kopyaları aynı" \
+                || bad "$f: ESP ve ISO9660 kopyaları FARKLI — ikisinden biri yanlış yazılmış"
+        elif [[ -f "${TMP}/esp/$f" ]]; then
+            bad "$f: ISO9660 ağacında yok (elle FAT'e kopyalanan kurulumlar açılmaz)"
+        fi
+    done
+fi
+if [[ -s "${BOOTX}" ]]; then
+    # shim, firmware'in db'sindeki Microsoft UEFI CA ile imzalı olmalı; yoksa
+    # Secure Boot açık hiçbir makinede ilk halka bile yüklenmez.
+    if sbverify --list "${BOOTX}" 2>/dev/null | grep -q 'Microsoft Corporation UEFI CA'; then
+        ok "BOOTx64.EFI (shim) Microsoft UEFI CA ile imzalı"
+    else
+        bad "BOOTx64.EFI Microsoft UEFI CA imzası taşımıyor — Secure Boot açık makinelerde açılmaz"
+    fi
 fi
 
 # --- 3. Kesilme testi ----------------------------------------------------
@@ -124,8 +176,6 @@ fi
 hdr "4. Secure Boot imzası"
 if [[ ! -r "${CERT}" ]]; then
     bad "sertifika okunamadı: ${CERT}"
-elif ! command -v sbverify >/dev/null 2>&1; then
-    info "sbverify yok — imza kontrolü atlandı (sbsigntools kurun)"
 else
     if sbverify --cert "${CERT}" "${GRUB}" >/dev/null 2>&1; then
         ok "grubx64.efi $(basename "${CERT}") ile imzalı"
@@ -149,6 +199,12 @@ if [[ -s "${GRUB}" ]]; then
         grep -q "archisosearchuuid=" <<<"${cmd}" \
             && ok "archisosearchuuid gömülü (medyum bulunabilir)" \
             || bad "archisosearchuuid yok — canlı medyum bulunamaz"
+        grep -qw "copytoram=n" <<<"${cmd}" \
+            && ok "copytoram=n — imaj RAM'e kopyalanmaz (boş splash'ta dakikalarca bekleme yok)" \
+            || bad "copytoram=n yok — imaj 4 GiB altındaysa açılışta sessizce RAM'e kopyalanır"
+        grep -qw "systemd.tpm2_measured_os=0" <<<"${cmd}" \
+            && ok "systemd.tpm2_measured_os=0 — canlı ortam makinenin TPM'ine yazmaz" \
+            || bad "systemd.tpm2_measured_os=0 yok — canlı ortam açıldığı makinenin TPM'ine SRK/EK yazar ve NvPCR birimleri canlıda FAIL olur"
         [[ "$(printf '%s' "${cmd}" | wc -l)" -eq 0 ]] \
             && ok "cmdline tek satır" || bad "cmdline birden fazla satır"
     fi
@@ -165,10 +221,13 @@ fi
 # --- 7. systemd-boot artığı kalmamış olmalı -----------------------------
 hdr "7. Artık dosyalar"
 if (( ISO_MODE )); then
-    if bsdtar tf "${TARGET}" 2>/dev/null | grep -qi '^EFI/systemd/'; then
+    if [[ -n "${esp_start}" ]] \
+       && mdir -i "${TARGET}@@$(( esp_start * ${esp_ssz:-512} ))" ::/EFI/systemd >/dev/null 2>&1; then
         bad "ESP'de EFI/systemd/ duruyor — _maze_sb_sign_esp systemd-boot'u silmemiş"
+    elif bsdtar tf "${TARGET}" 2>/dev/null | grep -qi '^EFI/systemd/'; then
+        bad "ISO9660 ağacında EFI/systemd/ duruyor — _maze_sb_sign_esp systemd-boot'u silmemiş"
     else
-        ok "systemd-boot ESP'den kaldırılmış"
+        ok "systemd-boot ESP'den ve ISO9660 ağacından kaldırılmış"
     fi
 else
     [[ -d "${ESP}/EFI/systemd" ]] \
