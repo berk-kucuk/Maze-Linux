@@ -42,5 +42,6 @@ file_permissions=(
   # maze-installer / maze-branding / maze-plasma-config / maze-hardening packages
   # (listed in packages.x86_64). Those packages set their own file modes, so the
   # per-file entries that used to live here were removed together with the files.
+  ["/etc/sudoers.d"]="0:0:750"
   ["/etc/sudoers.d/10-maze"]="0:0:440"
 )

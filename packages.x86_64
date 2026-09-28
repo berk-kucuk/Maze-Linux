@@ -72,6 +72,10 @@ libfido2
 libusb-compat
 linux
 linux-headers
+# LTS headers too, so DKMS builds broadcom-wl for the recovery kernel (linux-lts,
+# from maze-meta) as well. maze-meta no longer pulls them in; the installer
+# removes both header packages again on machines without Broadcom wireless.
+linux-lts-headers
 linux-atm
 linux-firmware
 linux-firmware-marvell
@@ -341,7 +345,8 @@ wl-clipboard
 # proprietary NVIDIA userspace (nvidia-utils + lib32, ~1.4 GB uncompressed)
 # onto the ISO even though the live session runs nouveau and no nvidia kernel
 # module was ever installed. NVIDIA users get the real driver post-install via
-# maze-gpu-driver (nvidia-dkms + utils, signed for Secure Boot).
+# maze-gpu-driver (Arch's prebuilt nvidia-open / nvidia-open-lts + utils; DKMS only
+# for non-Arch kernels).
 steam
 lib32-vulkan-intel
 lib32-vulkan-radeon
