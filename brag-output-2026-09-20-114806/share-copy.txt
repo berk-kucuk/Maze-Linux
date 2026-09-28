@@ -1,3 +1,0 @@
-Your machine remembers everything.
-Maze Linux: LUKS2 full-disk encryption, Secure Boot with a signed UKI, nftables. Panic Mode, Forensics Mode, a hardware privacy controller, and local tools — Haze, HazeDrop, Entropy Shield, Ollama — none of which connect to the cloud.
-mazelinux.berkkucukk.com.tr

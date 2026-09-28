@@ -1,142 +1,107 @@
 # Maze Linux
 
-Maze Linux is a lightweight, Arch-based live and install medium built with
-[archiso](https://gitlab.archlinux.org/archlinux/archiso). It is derived from
-the upstream `releng` profile and rebranded as Maze Linux. The system is
-English by default.
+Maze Linux is an Arch-based distribution focused on security, privacy and local
+AI, with a monochrome KDE Plasma (Wayland) desktop and a full UEFI Secure Boot
+chain. This repository is the [archiso](https://gitlab.archlinux.org/archlinux/archiso)
+profile that builds the Maze live / install ISO. The system is English by default.
 
-## Layout
+![Maze Linux desktop](https://mazelinux.berkkucukk.com.tr/screenshots/desktop.webp)
 
-| Path                     | Purpose                                                        |
-| ------------------------ | ------------------------------------------------------------- |
-| `profiledef.sh`          | ISO metadata (name, label, publisher) and build options.      |
-| `packages.x86_64`        | Packages installed into the live system.                      |
-| `pacman.conf`            | Pacman configuration used during the build.                   |
-| `airootfs/`              | Files overlaid onto the live root filesystem.                 |
-| `efiboot/`               | UEFI boot loader configuration (systemd-boot). Maze is **UEFI-only**. |
-| `build.sh`               | Convenience wrapper around `mkarchiso`.                        |
-| `maze-logo.png`, `maze-boot-animation/` | Source branding assets (logo + Plymouth theme). |
+Website and downloads: <https://mazelinux.berkkucukk.com.tr>
 
-## Branding: logo and boot splash
+## What's in the ISO
 
-The boot splash uses [Plymouth](https://wiki.archlinux.org/title/Plymouth) with
-a custom theme:
+- **Desktop:** KDE Plasma 6 on Wayland, SDDM, a top bar + bottom dock layout,
+  PipeWire, NetworkManager with `systemd-resolved`.
+- **Maze apps and config** from the signed `[mazelinux]` repository, pulled in
+  by `maze-meta`: branding, Plasma config, hardening, `maze-guard`,
+  `entropy-shield`, `qlam`, `hazedrop`, `haze`, `maze-ai`, `maze-connect`,
+  `maze-cloak`, `maze-snapshots`, `maze-tools`, `maze-secureboot`.
+- **Security and privacy:** Tor / Tor Browser, OnionShare, WireGuard, firewalld,
+  AppArmor, audit, OpenSnitch, USBGuard, ClamAV, Lynis, rkhunter.
+- **AI:** Ollama for local models.
+- **Everything else:** Firefox, Steam, Flatpak, distrobox, `paru`, and
+  `base-devel` + `git` for building AUR packages.
 
-- **Theme:** `airootfs/usr/share/plymouth/themes/maze/` (a `script`-module theme
-  built from `maze-boot-animation/`). `default.plymouth` symlinks to it and
-  `airootfs/etc/plymouth/plymouthd.conf` sets `Theme=maze`.
-- **initramfs:** the `plymouth` hook is added to
-  `airootfs/etc/mkinitcpio.conf.d/archiso.conf` so the theme is embedded in the
-  initramfs at build time, and `plymouth` is listed in `packages.x86_64`.
-- **Kernel cmdline:** the standard (non-accessibility) boot entries get
-  `quiet splash` so the animation is shown; the screen-reader entries are left
-  as plain text.
-- **Logo:** `maze-logo.png` is installed to `/usr/share/pixmaps/maze-logo.png`
-  and is also the theme's `logo.png`.
+See `packages.x86_64` for the full list.
 
-To change the artwork, edit the files under `maze-boot-animation/` (or the
-installed copies under `airootfs/usr/share/plymouth/themes/maze/`) and rebuild.
+## Repository layout
 
-## Desktop (KDE Plasma on Wayland)
+| Path               | Purpose                                                                 |
+| ------------------ | ----------------------------------------------------------------------- |
+| `profiledef.sh`    | ISO metadata, boot mode (UEFI / systemd-boot only), squashfs options, file permissions. |
+| `packages.x86_64`  | Packages installed into the live system.                                |
+| `pacman.conf`      | Pacman configuration used during the build (`[maze-aur]`, `[mazelinux]`, official repos). |
+| `airootfs/`        | Files overlaid onto the live root filesystem (live user, autologin, build hooks, skel). |
+| `efiboot/`         | systemd-boot entries for the live medium.                               |
+| `build.sh`         | Wrapper around `mkarchiso`: shim, signed UKI, Secure Boot signing.      |
+| `tools/`           | AUR builder, Secure Boot key generator, VM / QEMU test tooling.         |
+| `keys/secureboot/` | The **public** Maze ISO certificate (`Maze.crt` / `Maze.cer`). The private key is never committed. |
+| `MD-Files/`        | Design notes and runbooks.                                              |
 
-The live ISO boots straight into a full KDE Plasma desktop running on Wayland:
+Branding (logo, Plymouth theme, wallpapers), the Plasma layout and the installer
+are **not** in this tree. They ship as packages from `[mazelinux]`
+(`maze-branding`, `maze-plasma-config`, `maze-installer`, …), so installed
+systems get fixes through `pacman -Syu` and the ISO simply installs them.
 
-- **Packages:** `plasma-meta` plus a curated app set (Konsole, Dolphin, Kate,
-  Gwenview, Okular, Ark, …), Firefox, VLC, the PipeWire audio stack and
-  Vulkan/VA-API drivers — see the `KDE Plasma` block in `packages.x86_64`.
-- **Display manager:** SDDM (`display-manager.service`) with the default target
-  set to `graphical.target`.
-- **Autologin:** SDDM logs in the live user automatically to the Plasma Wayland
-  session — `airootfs/etc/sddm.conf.d/10-maze-autologin.conf`.
-- **Live user:** a passwordless `maze` user (group `wheel`, passwordless sudo via
-  `airootfs/etc/sudoers.d/10-maze`) is created at build time by the
-  `0600-maze-live-user.hook` pacman hook (Plasma refuses to run as root).
-- **Networking:** switched from archiso's `systemd-networkd`/`iwd` to
-  `NetworkManager` (Plasma's `plasma-nm` applet), with `systemd-resolved` kept
-  as the DNS backend.
-- **Wallpaper:** `maze-wallpaper.png` is installed as the Plasma wallpaper
-  package `/usr/share/wallpapers/Maze` and set as the default via the
-  `0700-maze-wallpaper.hook` build hook (it patches the wallpaper defaults, so
-  Plasma still builds its normal panel + desktop, just with the Maze wallpaper).
-- **Layout / widgets:** the panel layout (top bar + bottom dock), widgets and
-  their configs are seeded from a reference Plasma 6 setup into
-  `airootfs/etc/skel/.config/` (`plasma-org.kde.plasma.desktop-appletsrc`,
-  `kdeglobals`, `kwinrc`, …); the live user inherits them via `/etc/skel`.
-  Third-party pure-QML widgets (latte separator, netspeed, thermal monitor) are
-  shipped under `airootfs/etc/skel/.local/share/plasma/plasmoids/`. Host-specific
-  paths were rewritten to `/home/maze` and the wallpaper points to `Maze`.
+## Package sources
 
-> Note: with the squashfs left uncompressed (`profiledef.sh`), a full KDE image
-> is large (~8–10 GB). Switch `airootfs_image_tool_options` to zstd/xz for a
-> smaller ISO.
+`pacman.conf` combines three sources:
 
-## AUR packages (paru + custom packages)
+1. **`[maze-aur]`** (`./localrepo`, listed first): packages that are only on the
+   AUR, built locally by `tools/build-aur.sh`. These are `shim-signed`
+   (required), plus `paru`, `calamares`, `obfs4proxy`, `upscayl-bin` and a few
+   other optional apps. Because it comes first, it also works as a **staging
+   area**: a package dropped here overrides the published `[mazelinux]` version
+   in the next ISO build.
+2. **`[mazelinux]`** (<https://mazerepo.berkkucukk.com.tr/packages>): Maze's own
+   packages, signed with the `mazelinux-keyring` key.
+3. **Official Arch repositories**, including `multilib`.
 
-`paru` and a set of AUR packages (`entropy-shield`, `qlam`, `maze`, `hazedrop`,
-`haze`, `linux-chan-ai`, `sentinai`) are **preinstalled** in the ISO, so the live
-system works offline. `mkarchiso` can only install from binary repositories, so
-the AUR packages are first built into a local repository:
-
-1. `tools/build-aur.sh` clones each package from the AUR with `git` and builds
-   it in an **isolated clean chroot** (`./aur/chroot`, via `devtools`), then
-   publishes the results into `./localrepo/` (a pacman repo).
-2. `pacman.conf` has a `[maze-aur]` entry pointing at `./localrepo/`.
-3. `packages.x86_64` lists `paru-bin` and the AUR packages, so `mkarchiso`
-   installs them like any other package. `base-devel` + `git` are included too
-   so the preinstalled `paru` can build further AUR packages later.
-
-**Host isolation:** all building happens inside the throwaway chroot, so build
-dependencies and the AUR packages are *not* installed onto your host — your
-host's package set is left untouched. The only host requirement is the build
-tools (`sudo pacman -S --needed devtools git`); `sudo` is used solely to manage
-the chroot, never to install anything onto the host.
-
-Build order (the AUR step runs as a normal user, the ISO step as root):
-
-```sh
-sudo pacman -S --needed devtools git   # one-time: build tools
-./tools/build-aur.sh                   # build AUR packages into ./localrepo (NOT as root)
-sudo ./build.sh                        # build the ISO (checks the local repo exists)
-```
-
-If you move the project directory, update the absolute `Server` path in the
-`[maze-aur]` section of `pacman.conf`.
-
-## Build requirements
-
-- Arch Linux (or an Arch-based host)
-- The `archiso` package: `sudo pacman -S archiso`
-- `sbsigntools` for Secure Boot signing of the ISO: `sudo pacman -S sbsigntools`
-- `systemd-ukify` for building the Unified Kernel Image: `sudo pacman -S systemd-ukify`
-- Root privileges and a few GB of free disk space
+The AUR packages are built in an **isolated clean chroot** (`./aur/chroot`, via
+`devtools`), so nothing gets installed on your host. If an optional package
+fails to build, `build-aur.sh` comments it out in `packages.x86_64`
+(`#MAZE-SKIP#`) and the ISO build carries on.
 
 ## Building the ISO
 
+Requirements: an Arch (or Arch-based) host, root access, several GB of free disk
+space, and:
+
 ```sh
-sudo ./build.sh
+sudo pacman -S --needed archiso devtools git sbsigntools systemd-ukify
 ```
 
-The resulting ISO image is written to `./out/`. Intermediate build artifacts
-are placed in `./work/`. Both directories can be safely deleted afterwards.
+Then:
 
-You can override the directories:
+```sh
+./tools/build-aur.sh     # build AUR packages into ./localrepo (NOT as root)
+sudo ./build.sh          # build the ISO
+```
+
+The ISO is written to `./out/` and the intermediate files go to `./work/`. You
+can delete both afterwards. To use other directories:
 
 ```sh
 sudo ./build.sh -w /tmp/maze-work -o /tmp/maze-out
 ```
 
-## Testing the ISO
+Signing the live ISO needs the private key `keys/secureboot/Maze.key`, which
+`tools/gen-sb-keys.sh` creates once. It is git-ignored and never published.
 
-Boot the generated image in a virtual machine, for example with QEMU:
+## Testing in a VM
+
+`tools/test-boot.sh` boots an ISO (or installed disk image) headless in QEMU and
+checks that it really comes up, using screenshots and the QEMU guest agent. It
+needs no root and suits CI (`--secboot` enforces Secure Boot). `tools/vm-install-test.sh` runs the full
+install flow on a Secure Boot–enforcing OVMF with a TPM 2.0 (swtpm):
 
 ```sh
-qemu-system-x86_64 -m 4096 -enable-kvm \
-    -cdrom out/mazelinux-*.iso \
-    -boot d -bios /usr/share/edk2/x64/OVMF.4m.fd
+tools/vm-install-test.sh install    # boot the newest ISO in ./out, install onto a fresh 40 GiB disk
+tools/vm-install-test.sh boot       # boot the installed disk
 ```
 
-To test **with UEFI Secure Boot enabled**, use writable OVMF firmware + vars
-copies so the enrolled key persists across reboots:
+To test by hand with Secure Boot enabled:
 
 ```sh
 cp /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd /tmp/code.fd
@@ -148,128 +113,68 @@ qemu-system-x86_64 -m 4096 -enable-kvm \
     -cdrom out/mazelinux-*.iso -boot d
 ```
 
-On the first Secure Boot start, **MokManager** appears: choose
-*Enroll key from disk* → select `MOK.cer` on the ISO's EFI partition → enroll →
-reboot. The live session then boots with Secure Boot on. `mokutil --sb-state`
-inside the live session should report *SecureBoot enabled*.
-
 ## Secure Boot
 
-Maze Linux supports UEFI Secure Boot on both the live ISO and the installed
-system using a Microsoft-signed **shim** plus a Maze key enrolled as a **MOK**
-(Machine Owner Key). Factory and Windows keys are kept — no firmware *Setup
-Mode* is required.
+Maze supports UEFI Secure Boot on both the live ISO and the installed system. It
+uses a Microsoft-signed **shim** plus a Maze key enrolled as a **MOK** (Machine
+Owner Key). Factory and Windows keys stay in place, and firmware *Setup Mode* is
+not needed.
 
 ```
 firmware → shim (Microsoft-signed) → Unified Kernel Image (Maze-signed)
 ```
 
-The kernel, initramfs and kernel command line are bundled into a single
-**Unified Kernel Image** (UKI) PE binary, signed with the Maze key and installed
-as `grubx64.efi` — the second stage shim chainloads by that exact name. The
-shim **always** verifies its second stage through its own `shim_lock` protocol
-(MOK-backed), never via the firmware's `db`. Because the kernel is already
-embedded inside the UKI, no separate firmware `LoadImage()` of `vmlinuz` ever
-happens. This is what makes the chain portable across every UEFI firmware —
-strict ones (MSI, some ASUS, …) that ignore the MOK for loose kernels and only
-consult their own `db` no longer reject the boot with
-*Security Policy Violation*.
+The kernel, initramfs and kernel command line are bundled into a single signed
+**Unified Kernel Image** (UKI), installed as `grubx64.efi` (the name shim
+chainloads). Shim verifies it through its own MOK-backed `shim_lock` protocol,
+and the firmware never has to load a separate `vmlinuz`. This makes the chain
+work on strict firmware (MSI, some ASUS, …) that would otherwise reject the boot
+with *Security Policy Violation*.
 
-- **Live ISO** — signed at build time with the shared Maze ISO key in
-  `keys/secureboot/` (generated once by `tools/gen-sb-keys.sh`; `build.sh`
-  patches `mkarchiso` to inject shim and build + sign the UKI). Boot it
-  once and enroll `MOK.cer` via MokManager as described above.
-- **Installed system** — enable the **Secure Boot** toggle in the installer's
-  *Bootloader* menu (on by default on UEFI with systemd-boot + UKI). The
-  installer generates a **per-machine** key (its private half never leaves that
-  machine), signs systemd-boot and the unified kernel image, and copies the
-  certificate to the ESP as `MOK.cer`. A pacman hook re-signs automatically after
-  kernel and systemd updates. On the first boot the bootloader is not trusted
-  yet, so MokManager appears: choose **Enroll key from disk → MOK.cer → Continue
-  → Yes**, then reboot. **No password** — enrollment requires physical presence
-  instead (the same flow as the live ISO). Details are written to
+- **Live ISO:** signed at build time with the Maze ISO key. On the first boot,
+  MokManager appears: choose *Enroll key from disk* → `MOK.cer` on the ISO's
+  EFI partition → enroll → reboot. `mokutil --sb-state` should then report
+  *SecureBoot enabled*.
+- **Installed system:** the installer generates a **per-machine** key (its
+  private half never leaves that machine), signs systemd-boot and the UKI, and
+  copies the certificate to the ESP as `MOK.cer`. `maze-secureboot` re-signs
+  automatically after kernel and systemd updates. On the first boot, enroll
+  `MOK.cer` the same way (no password, only physical presence). Details are in
   `/var/lib/maze-secureboot/ENROLLMENT.txt`.
 
-If you prefer not to use Secure Boot, simply disable it in firmware (the ISO and
-the installed system boot normally either way), or turn the installer toggle off.
+If you prefer not to use Secure Boot, disable it in firmware or turn off the
+installer toggle. Both the ISO and the installed system boot normally either way.
+
+## Installing
+
+> **UEFI is required.** Maze's boot stack (systemd-boot + UKI + shim) has no
+> BIOS / legacy path. Boot the live medium in **UEFI mode** and disable CSM /
+> Legacy Boot if needed. The installer detects a BIOS boot and refuses up front.
+
+On the live desktop, connect to the internet and click **Install Maze Linux** in
+the dock, or run `maze-calamares`.
+
+The installer is [Calamares](https://calamares.io/) in an **offline /
+`unpackfs`** model: the live system is copied to the target (no `pacstrap`), and
+Maze's `deploy-to-target.sh` then finishes the install (branding, kernel
+parameters, Secure Boot / MOK signing, AUR apps, security services). The
+Calamares config, branding, launcher and `deploy-to-target.sh` ship in the
+**`maze-installer`** package. It is live-ISO-only and is never installed on the
+target. See `MD-Files/CALAMARES.md` for the module list and the VM debug
+runbook.
 
 ## Checking an installed system
 
-Every Maze install ships `maze-doctor` (part of `maze-tools`). It is read-only —
-it inspects and reports, never repairs — and every finding prints the command
-that fixes it:
+Every install ships `maze-tools`:
 
 ```sh
-sudo maze-doctor
-```
-
-It walks the whole boot chain (shim → grubx64.efi → UKI → kernel, signatures and
-MOK enrolment included), the installed kernels and their DKMS modules, every
-Maze package and its files, branding, the kernel command line and initramfs
-hooks, pacman configuration, leftovers from the live medium, storage, filesystem
-integrity, snapshots, services, the security posture and recent kernel errors.
-
-`--deep` additionally verifies every installed file on the system against its
-package (slow). `--no-color` gives plain text suitable for a bug report — that
-output is the most useful thing to attach when asking for help.
-
-Two more tools ship next to it (also in `maze-tools`):
-
-```sh
+sudo maze-doctor              # read-only health check of the boot chain, kernels, packages, services, security
 sudo maze-audit --deep        # did the install leave the machine the way the source intends?
-sudo maze-exercise            # kernel-update rehearsal, daemon restarts, then maze-audit
+sudo maze-exercise            # kernel-update rehearsal and daemon restarts, then maze-audit
 ```
 
-`maze-audit` checks the machine against what `deploy-to-target.sh`, the
-package presets and `packages.x86_64` promise — every live-medium file that
-must be gone, every kernel parameter, the boot chain down to the hooks inside
-the sealed initrd, the service set, the btrfs layout; `--deep` adds the LUKS
-header, the MOK list, tmpfiles/sysusers compliance and more. `maze-exercise`
-changes state on purpose: it reinstalls the recovery kernel to drive the whole
-hook chain, restarts the Maze daemons, optionally suspends (`--suspend`), and
-audits afterwards. Both are read from the source tree as
-`MazeLinux/tools/{audit,exercise}-installed-system.sh`.
-
-## Installing Maze Linux
-
-> **UEFI is required.** Maze's boot stack (systemd-boot + Unified Kernel Image +
-> shim Secure Boot) is UEFI-only and has no BIOS/legacy bootloader path, so a
-> legacy-BIOS / CSM install cannot complete (it fails at the bootloader step).
-> Boot the live medium in **UEFI mode** — disable CSM / Legacy Boot in firmware
-> setup if needed. `maze-calamares` detects a BIOS boot and refuses up front with
-> this instruction rather than failing late during partitioning.
-
-On the booted live medium, connect to the internet and launch the graphical
-installer — click **Install Maze Linux** in the panel/dock, or run:
-
-```sh
-maze-calamares
-```
-
-Maze uses **[Calamares](https://calamares.io/)** as its installer, in an
-**offline / `unpackfs`** model: the baked live system is copied to the target
-(no `pacstrap`), then Maze's own **`deploy-to-target.sh`** finalises the install
-(branding, Plymouth, kernel params, Secure Boot / MOK signing, AUR apps,
-security services). All Maze-specific install logic lives in that one script,
-which is wired into Calamares as a `shellprocess` module — so the live ISO and
-the installed system stay in sync from a single source.
-
-- **Config & branding:** `airootfs/etc/calamares/` (`settings.conf` + `modules/`)
-  and `airootfs/usr/share/calamares/branding/maze/` (true-black OLED + white).
-- **Launcher:** `airootfs/usr/local/bin/maze-calamares` (XWayland + pkexec) and
-  `maze-calamares.desktop` (pinned in the live panel/dock).
-- **Bootloader:** systemd-boot (UEFI-only; installs fail in legacy BIOS mode);
-  boots straight into Maze (`timeout 0`, so the splash comes up immediately).
-- Calamares is not in the official repos, so it is built from the **AUR** by
-  `tools/build-aur.sh` into the local repo and baked into the live ISO
-  (live-medium only).
-
-See **`MD-Files/CALAMARES.md`** for the full module list and the VM
-debug runbook.
-
-```sh
-# edit Maze's install logic / Calamares config, then rebuild
-$EDITOR airootfs/usr/share/maze/install/deploy-to-target.sh
-$EDITOR airootfs/etc/calamares/...
-sudo ./build.sh
-```
+`maze-doctor` never repairs anything, and every finding prints the command that
+fixes it. `maze-doctor --no-color` gives plain text, which is the most useful
+thing to attach when asking for help. `tools/audit-installed-system.sh` and
+`tools/exercise-installed-system.sh` in this repo are symlinks to those scripts
+in the `maze-tools` source tree.
