@@ -84,10 +84,11 @@ start_tpm() {
     for _ in $(seq 1 20); do [[ -S "${VMDIR}/swtpm.sock" ]] && return 0; sleep 0.25; done
     die "swtpm socket did not appear"
 }
+# Both append to the QARGS array (not echo): paths with spaces must survive.
 tpm_args() {
     [[ -S "${VMDIR}/swtpm.sock" ]] || return 0
-    echo -chardev socket,id=chrtpm,path="${VMDIR}/swtpm.sock" \
-         -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-crb,tpmdev=tpm0
+    QARGS+=(-chardev "socket,id=chrtpm,path=${VMDIR}/swtpm.sock"
+            -tpmdev "emulator,id=tpm0,chardev=chrtpm" -device "tpm-crb,tpmdev=tpm0")
 }
 
 qemu_common() {
@@ -95,18 +96,18 @@ qemu_common() {
     # virtio disk/net, q35, the secboot OVMF: this is the strictest firmware
     # shape we can get without real hardware. SMM is what makes the secboot
     # build actually enforce Secure Boot.
-    echo -machine q35,smm=on,accel=kvm -cpu host -smp "${CPUS}" -m "${MEM}" \
-         -drive if=pflash,format=raw,readonly=on,file="${CODE}" \
-         -drive if=pflash,format=raw,file="${VARS}" \
-         -drive file="${DISK}",if=virtio,format=qcow2,discard=unmap \
-         -device virtio-vga-gl -display gtk,gl=on \
-         -device virtio-net-pci,netdev=n0 -netdev user,id=n0 \
-         -device qemu-xhci -device usb-tablet \
-         -audiodev pa,id=a0 -device intel-hda -device hda-output,audiodev=a0 \
-         -rtc base=utc \
-         -global driver=cfi.pflash01,property=secure,value=on \
-         -chardev socket,path="${QGA_SOCK}",server=on,wait=off,id=qga0 \
-         -device virtio-serial -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0
+    QARGS+=(-machine "q35,smm=on,accel=kvm" -cpu host -smp "${CPUS}" -m "${MEM}"
+            -drive "if=pflash,format=raw,readonly=on,file=${CODE}"
+            -drive "if=pflash,format=raw,file=${VARS}"
+            -drive "file=${DISK},if=virtio,format=qcow2,discard=unmap"
+            -device virtio-vga-gl -display "gtk,gl=on"
+            -device "virtio-net-pci,netdev=n0" -netdev "user,id=n0"
+            -device qemu-xhci -device usb-tablet
+            -audiodev "pa,id=a0" -device intel-hda -device "hda-output,audiodev=a0"
+            -rtc base=utc
+            -global "driver=cfi.pflash01,property=secure,value=on"
+            -chardev "socket,path=${QGA_SOCK},server=on,wait=off,id=qga0"
+            -device virtio-serial -device "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0")
 }
 
 case "${1:-}" in
@@ -139,7 +140,8 @@ case "${1:-}" in
         echo ">>   Click 'Install Maze Linux' (first dock icon), choose Erase disk + LUKS,"
         echo ">>   create a user, finish, then shut the VM down. Then: $0 boot"
         start_tpm && echo ">> tpm   : TPM 2.0 (swtpm), state in ${TPMDIR}" || true
-        exec qemu-system-x86_64 $(qemu_common) $(tpm_args) \
+        QARGS=(); qemu_common; tpm_args
+        exec qemu-system-x86_64 "${QARGS[@]}" \
              -drive file="${ISO}",media=cdrom,readonly=on \
              -boot order=d,menu=on -name "Maze install test"
         ;;
@@ -149,7 +151,8 @@ case "${1:-}" in
         echo ">> booting the installed disk (Secure Boot firmware). First boot: MokManager -> Enroll key from disk -> MOK.cer."
         echo ">> Once logged in, from another host terminal:  $0 audit   (full report)  or  $0 check"
         start_tpm && echo ">> tpm   : TPM 2.0 (swtpm), state in ${TPMDIR}" || true
-        exec qemu-system-x86_64 $(qemu_common) $(tpm_args) -boot order=c,menu=on -name "Maze installed"
+        QARGS=(); qemu_common; tpm_args
+        exec qemu-system-x86_64 "${QARGS[@]}" -boot order=c,menu=on -name "Maze installed"
         ;;
     serve)
         need python3

@@ -178,7 +178,7 @@ fi
 )
 # SMM'nin NVRAM'i gercekten korumasi (Secure Boot degiskenleri isletim
 # sisteminden degistirilemesin) icin pflash "secure" olmali.
-(( SECBOOT )) && QEMU_ARGS+=(-global driver=cfi.pflash01,property=secure,value=on)
+(( SECBOOT )) && QEMU_ARGS+=(-global "driver=cfi.pflash01,property=secure,value=on")
 [[ -w /dev/kvm ]] && QEMU_ARGS+=(-enable-kvm -cpu host) || info "uyari: KVM yok, yazilim emulasyonu (yavas)"
 # Ekran adaptoru: QEMU derlemeleri farkli setlerle geliyor (virtio her zaman
 # yok). Desteklenen ilkini sec — ekran goruntusu icin hepsi yeterli.
