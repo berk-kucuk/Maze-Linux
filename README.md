@@ -178,3 +178,9 @@ fixes it. `maze-doctor --no-color` gives plain text, which is the most useful
 thing to attach when asking for help. `tools/audit-installed-system.sh` and
 `tools/exercise-installed-system.sh` in this repo are symlinks to those scripts
 in the `maze-tools` source tree.
+
+## License
+
+Copyright © 2026 Berk Küçük
+
+Released under the GNU General Public License v3.0 — see [LICENSE](LICENSE).
