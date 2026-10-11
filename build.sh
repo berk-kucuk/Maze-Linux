@@ -110,20 +110,20 @@ if ! ls "${PROFILE_DIR}/localrepo/maze-aur.db".* >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pre-flight: report every repo package ./localrepo will OVERRIDE.
+# Pre-flight: which repo each ./localrepo package really comes from.
 #
-# pacman.conf lists [maze-aur] (./localrepo) FIRST — before [mazelinux] and the
-# official repos — on purpose, and pacman resolves a name from the first repo
-# that carries it WITHOUT comparing versions across repos. That makes
-# ./localrepo a staging area — a freshly built package dropped there ships in
-# the next ISO instead of the published one, so a new version can be proven in
-# a real ISO before it is pushed to the public repo.
+# pacman resolves a name from the FIRST repo in pacman.conf that carries it,
+# WITHOUT comparing versions across repos. So for every package in ./localrepo
+# that some other repo also carries, the ORDER decides which copy ships:
 #
-# The same rule means a stale file left in ./localrepo would silently ship in
-# place of the repo package (this has bitten before: an ancient
-# entropy-shield/haze/sentinai set sat there for months), and a package there
-# that shares a name with a core/extra one would replace THAT without a word.
-# So never let it be silent — list every override, every build.
+#   repo listed BEFORE [maze-aur] -> that repo wins; the local copy is IGNORED.
+#     Since 2026-10 [mazelinux] comes first, so this is the normal case for
+#     Maze's own apps. Harmless when the versions match; when the ignored local
+#     copy is NEWER, a build that was meant to ship would silently not — that
+#     is reported as a WARNING.
+#   repo listed AFTER [maze-aur]  -> the local copy OVERRIDES it (core/extra,
+#     or [mazelinux] under the old order). Always listed: a stale file there
+#     once shipped for months in place of the published package.
 #
 # The comparison uses the PROFILE's pacman.conf (minus [maze-aur] itself) with a
 # throwaway DBPath, synced right now: the build host's own pacman.conf may not
@@ -131,14 +131,22 @@ fi
 # which made the old host-based check report "overrides nothing" while it did.
 # ---------------------------------------------------------------------------
 check_localrepo_overrides() {
-    local db conf pkgfile info name ver line repo rname rver
-    local -A repo_of=()
-    local overrides=()
+    local db conf pkgfile info name ver line repo rname rver rrepo
+    local -A repo_of=() before_local=()
+    local overrides=() newer_ignored=() older_ignored=()
+    local same_ignored=0 seen_local=0 r
+    # Repos that precede [maze-aur] in the profile's pacman.conf.
+    while read -r r; do
+        [[ "${r}" == "maze-aur" ]] && { seen_local=1; continue; }
+        [[ "${r}" == "options" || "${seen_local}" -eq 1 ]] && continue
+        before_local["${r}"]=1
+    done < <(sed -n 's/^\[\([^]]*\)\].*/\1/p' "${PROFILE_DIR}/pacman.conf")
+
     db="$(mktemp -d --tmpdir maze-repocheck.XXXXXX)"
     conf="${db}/pacman.conf"
     awk '/^\[maze-aur\]/{skip=1; next} /^\[/{skip=0} !skip' "${PROFILE_DIR}/pacman.conf" > "${conf}"
     if ! pacman --config "${conf}" --dbpath "${db}" -Sy >/dev/null 2>&1; then
-        echo "Warning: could not sync the profile's repos; the ./localrepo override check was skipped." >&2
+        echo "Warning: could not sync the profile's repos; the ./localrepo check was skipped." >&2
         rm -rf "${db}"
         return 0
     fi
@@ -147,7 +155,14 @@ check_localrepo_overrides() {
     while read -r repo rname rver _; do
         [[ -n "${rname}" && -z "${repo_of[${rname}]+x}" ]] && repo_of["${rname}"]="${repo} ${rver}"
     done < <(pacman --config "${conf}" --dbpath "${db}" -Sl 2>/dev/null)
-    rm -rf "${db}"
+
+    # Same name AND version in two repos is only harmless when it is the same
+    # FILE. A different build under an identical version shares its file name
+    # in pacman's cache, so one copy is checked against the other's checksum and
+    # pacstrap stops with "invalid or corrupted package (checksum)" — this is
+    # what broke the first build after the repo order changed.
+    local -a mismatch=()
+    local rsum lsum
 
     for pkgfile in "${PROFILE_DIR}"/localrepo/*.pkg.tar.*; do
         [[ -e "${pkgfile}" && "${pkgfile}" != *.sig ]] || continue
@@ -158,17 +173,61 @@ check_localrepo_overrides() {
         ver="$(awk -F': +' '/^Version +:/{print $2; exit}' <<<"${info}")"
         [[ -n "${name}" && -n "${repo_of[${name}]+x}" ]] || continue
         line="${repo_of[${name}]}"
-        overrides+=("${name}  ${ver}  (${line%% *}: ${line#* })")
+        rrepo="${line%% *}"; rver="${line#* }"
+        if [[ -n "${before_local[${rrepo}]+x}" ]]; then
+            case "$(vercmp "${ver}" "${rver}")" in
+                0)  same_ignored=$((same_ignored + 1))
+                    rsum="$(bsdtar -xOf "${db}/sync/${rrepo}.db" "${name}-${rver}/desc" 2>/dev/null \
+                                | awk '/^%SHA256SUM%$/{getline; print; exit}')"
+                    lsum="$(sha256sum "${pkgfile}" | cut -d' ' -f1)"
+                    if [[ -n "${rsum}" && "${rsum}" != "${lsum}" ]]; then
+                        mismatch+=("${name}  ${ver}  (./localrepo/${pkgfile##*/})")
+                    fi ;;
+                1)  newer_ignored+=("${name}  local ${ver}  >  ${rrepo} ${rver}") ;;
+                *)  older_ignored+=("${name}  local ${ver}  <  ${rrepo} ${rver}") ;;
+            esac
+        else
+            overrides+=("${name}  ${ver}  (${rrepo}: ${rver})")
+        fi
     done
+    rm -rf "${db}"
+
+    if [[ ${#mismatch[@]} -gt 0 ]]; then
+        echo
+        echo "Error: ${#mismatch[@]} package(s) in ./localrepo have the SAME version as the published one" >&2
+        echo "       but are a DIFFERENT build:" >&2
+        printf '         %s\n' "${mismatch[@]}" >&2
+        echo "       pacman would reject one of them as 'corrupted (checksum)' halfway through" >&2
+        echo "       the build. Move the local file(s) out of ./localrepo (the published build" >&2
+        echo "       ships anyway), drop them from the db with repo-remove, and rerun:" >&2
+        echo "         repo-remove localrepo/maze-aur.db.tar.zst <name>" >&2
+        exit 1
+    fi
+
+    if [[ ${#newer_ignored[@]} -gt 0 ]]; then
+        echo
+        echo "   >> WARNING: ${#newer_ignored[@]} package(s) in ./localrepo are NEWER than the published"
+        echo "      copy but will NOT ship — the repo listed before [maze-aur] wins:"
+        printf '        %s\n' "${newer_ignored[@]}"
+        echo "      Publish them first, or the ISO carries the older published build."
+        echo
+    fi
     if [[ ${#overrides[@]} -gt 0 ]]; then
         echo
-        echo "   >> local repo OVERRIDES ${#overrides[@]} repo package(s):"
+        echo "   >> local repo OVERRIDES ${#overrides[@]} package(s) of a repo listed after it:"
         printf '        %s\n' "${overrides[@]}"
         echo "      The ISO will ship the ./localrepo copies, NOT the repo ones."
-        echo "      Intended for testing before publishing — remove the files to undo."
         echo
-    else
-        echo "   Local repo    : OK (overrides no package in the profile's repos)"
+    fi
+    if [[ ${#older_ignored[@]} -gt 0 ]]; then
+        echo "   Local repo    : ${#older_ignored[@]} older local copy(ies) ignored (the published one ships):"
+        printf '        %s\n' "${older_ignored[@]}"
+    fi
+    if [[ ${same_ignored} -gt 0 ]]; then
+        echo "   Local repo    : ${same_ignored} package(s) identical to the published version — downloaded from the repo"
+    fi
+    if [[ ${#newer_ignored[@]} -eq 0 && ${#overrides[@]} -eq 0 ]]; then
+        echo "   Local repo    : OK (supplies only packages no earlier repo carries)"
     fi
 }
 check_localrepo_overrides
