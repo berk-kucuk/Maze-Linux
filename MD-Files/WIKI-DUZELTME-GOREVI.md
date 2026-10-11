@@ -31,7 +31,7 @@ Sayfanın sonundaki blok, aynı sayfanın üst yarısıyla ve tüm wiki ile çel
 
 `Home.md` doğru söylüyor ("Network attack detection"), `Limitations.md` da doğru. Sadece `Tools.md` + `Security.md` + `After-Install.md` + `FAQ.md` karışık.
 
-**Yapılacak:** İkisi ayrı başlıklar altına bölünecek. `After-Install.md`'deki "**Maze Guard** will prompt you the first time any application tries to make a network connection" cümlesi OpenSnitch'e ait, düzeltilecek. `FAQ.md`'deki "Maze Guard keeps asking me about the same app" sorusu da OpenSnitch sorusu.
+**Yapılacak (2026-10 güncellemesi):** OpenSnitch Maze'den çıkarıldı (ISO'da paket, servis, config ve tray autostart yok). Wiki'deki OpenSnitch anlatımları tamamen silinecek; Maze Guard bölümü yalnızca Maze Guard'ı anlatacak. `After-Install.md`'deki "**Maze Guard** will prompt you the first time any application tries to make a network connection" cümlesi ve `FAQ.md`'deki "Maze Guard keeps asking me about the same app" sorusu (ikisi de OpenSnitch davranışı) silinecek.
 
 ### 3. OpenSnitch varsayılan olarak **pasif** modda başlıyor — wiki bunu hiç söylemiyor
 
@@ -41,7 +41,7 @@ Sayfanın sonundaki blok, aynı sayfanın üst yarısıyla ve tüm wiki ile çel
 
 Wiki ise (`Security.md`, `FAQ.md`, `After-Install.md`) "her bağlantıda soracak" diyor. Kullanıcı hiçbir prompt görmeyince "bozuk" sanacak.
 
-**Yapılacak:** OpenSnitch bölümüne "varsayılan allow-all/passive; interception'ı tray'den manuel açarsınız" adımı eklenecek.
+**Yapılacak:** ~~Pasif mod notu eklenecek.~~ Geçersiz — OpenSnitch 2026-10'da çıkarıldı; bölüm #2'deki gibi wiki'den silinecek. `VirtualMachine.md`'deki OpenSnitch notları da kaldırılacak.
 
 ### 4. ClamAV "on-access scanning" iddiası yanlış
 

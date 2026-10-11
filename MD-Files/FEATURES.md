@@ -30,7 +30,7 @@ Three pillars define the project:
 | Out‑of‑the‑box state | Minimal base, no GUI | Complete KDE Plasma **Wayland** desktop |
 | Installation | Manual / generic `archinstall` | Branded, **OLED‑themed Calamares** graphical installer (offline `unpackfs`) |
 | Desktop & apps | None — you install everything | Curated apps preinstalled & configured |
-| Security | You configure it yourself | AppArmor, firewalld, fail2ban, auditd, OpenSnitch **on by default** |
+| Security | You configure it yourself | AppArmor, firewalld, fail2ban, auditd **on by default** |
 | Secure Boot | Manual key management | **UEFI Secure Boot out of the box** — shim + per‑machine MOK, kernel auto‑re‑signed on every update |
 | Privacy | You configure it yourself | Tor, Mullvad, MAC randomization, private apps preconfigured |
 | AI tooling | None | Ollama + AI utilities + dev toolchain included |
@@ -67,14 +67,11 @@ Hardening and defensive tools are installed **and enabled** from first boot:
 - **firewalld** with sensible service rules.
 - **fail2ban** protecting SSH (systemd‑journal backend).
 - **auditd** system auditing.
-- **OpenSnitch** — interactive application firewall that asks before any app
-  makes an outbound connection.
 - **ClamAV** antivirus engine with the **QLAM** modern GUI.
 - **rkhunter** and **lynis** for rootkit detection and security auditing.
 - **Hardened SSH** defaults (no root login, limited auth attempts, no agent/TCP/X11
   forwarding). The SSH server is not enabled by default.
-- **OpenSnitch** interactive application firewall (autostarts on the desktop), plus
-  **firewalld**, **AppArmor** and **auditd** — all selectable in the installer's
+- **firewalld**, **AppArmor** and **auditd** — all selectable in the installer's
   **Security** section.
 - **Kernel & network hardening** — sensible `sysctl` defaults applied from first
   boot (hidden kernel pointers, restricted `dmesg`/`ptrace`, eBPF hardening,

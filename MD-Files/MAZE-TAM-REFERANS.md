@@ -63,7 +63,7 @@ Stock releng ~100 paket; Maze **250**. Eklenenler dört gruba ayrılır:
 
 1. **Masaüstü** — KDE Plasma (Wayland), SDDM, Qt6/PySide6, ses/ağ yığını
 2. **Güvenlik/gizlilik** — `tor`, `i2pd`, `dnscrypt-proxy`, `clamav`,
-   `firejail`, `apparmor`, `nftables`, `usbguard`, `opensnitch`,
+   `firejail`, `apparmor`, `nftables`, `usbguard`,
    `rkhunter`, `audit` (fail2ban 2026-09'da çıkarıldı: yalnızca varsayılanda kapalı olan sshd'yi koruyordu)
 3. **Boot zinciri** — `sbsigntools`, `systemd-ukify`, `efibootmgr`, `shim`
    (AUR), `amd-ucode`, `intel-ucode`
@@ -102,7 +102,7 @@ ISO'nun kök dosya sistemine eklenenler:
 - **`etc/mkinitcpio.conf.d/archiso.conf`** — canlı ortam initramfs ayarları.
   Kurulumda hedeften temizlenir (aksi hâlde kurulu sistem archiso hook'larıyla
   açılmaya çalışır).
-- `etc/sddm.conf.d/`, `etc/plymouth/`, `etc/firefox/`, `etc/opensnitchd/`,
+- `etc/sddm.conf.d/`, `etc/plymouth/`, `etc/firefox/`,
   `etc/polkit-1/`, `etc/sudoers.d/10-maze`. (2026-09: `etc/maze/sentinel.conf`,
   `etc/audit/`, `etc/ssh/sshd_config.d/`, zram/oomd ayarları, `etc/kernel/install.conf`,
   Plasma görünüm temaları, panik plasmoid'i, renk şemaları ve ikonlar airootfs'ten

@@ -18,7 +18,7 @@ Website and downloads: <https://mazelinux.berkkucukk.com.tr>
   `entropy-shield`, `qlam`, `hazedrop`, `haze`, `maze-ai`, `maze-connect`,
   `maze-cloak`, `maze-snapshots`, `maze-tools`, `maze-secureboot`.
 - **Security and privacy:** Tor / Tor Browser, OnionShare, WireGuard, firewalld,
-  AppArmor, audit, OpenSnitch, USBGuard, ClamAV, Lynis, rkhunter.
+  AppArmor, audit, USBGuard, ClamAV, Lynis, rkhunter.
 - **AI:** Ollama for local models.
 - **Everything else:** Firefox, Steam, Flatpak, distrobox, `paru`, and
   `base-devel` + `git` for building AUR packages.

@@ -11,7 +11,6 @@ SERVICES=(
     apparmor.service
     auditd.service
     firewalld.service
-    opensnitchd.service
     # Anonymity (Tor SOCKS proxy on 127.0.0.1:9050; used by torsocks/torbrowser)
     tor.service
     # Privileged-action broker for the panic widget + hardware kill switches

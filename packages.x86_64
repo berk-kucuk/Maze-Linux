@@ -252,7 +252,8 @@ mazelinux-keyring
 # maze-meta — the SINGLE source of truth for the default Maze package set. It
 # depends on every maze-* package (config, branding, and the default Maze apps:
 # maze-guard, entropy-shield, qlam, hazedrop, haze, maze-ai, maze-connect,
-# maze-cloak — NOT linux-chan-ai/sentinai, which can talk to Google Gemini) PLUS
+# maze-cloak, plasma6-applets-ai-usage (installed, not on the panel) — NOT
+# linux-chan-ai/sentinai, which can talk to Google Gemini) PLUS
 # curated security tooling (firejail), so listing it here pulls the whole desktop
 # in. To add a new default package: edit maze-meta's depends + bump pkgrel and
 # republish — new ISOs get it here, and installed systems pick it up on
@@ -297,7 +298,6 @@ usbguard
 aircrack-ng
 wireshark-qt
 openbsd-netcat
-opensnitch
 # AI
 ollama
 # Virtualization: intentionally NOT on the live ISO. The full stack

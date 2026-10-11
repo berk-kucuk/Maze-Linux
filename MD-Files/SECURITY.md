@@ -1,7 +1,7 @@
 # Security Policy
 
 Maze Linux ships security-hardening tooling by default (AppArmor, firewalld,
-fail2ban, auditd, OpenSnitch, Secure Boot). This document covers vulnerability
+fail2ban, auditd, Secure Boot). This document covers vulnerability
 reporting for the distro itself — its own scripts, install pipeline, Secure
 Boot chain, hardening defaults, and the `[mazelinux]` package repo.
 
