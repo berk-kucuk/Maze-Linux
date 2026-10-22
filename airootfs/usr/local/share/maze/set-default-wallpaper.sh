@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# set-default-wallpaper.sh — Make "Maze" the default Plasma wallpaper.
+# set-default-wallpaper.sh — Make "Maze-Dust" the default Plasma wallpaper.
 #
 # Run as a pacman PostTransaction hook inside the build chroot, after Plasma is
 # installed. It only changes *defaults*, so Plasma still generates its normal
 # panel + desktop layout — just with the Maze wallpaper. The wallpaper itself is
-# shipped as the package /usr/share/wallpapers/Maze, so the name "Maze" resolves.
+# shipped as the package /usr/share/wallpapers/Maze-Dust, so the name "Maze-Dust" resolves.
 #
 set -euo pipefail
 
-WALL="Maze"
+WALL="Maze-Dust"
 
 # 1) Default for the org.kde.image wallpaper plugin (used for fresh desktops).
 main_xml="/usr/share/plasma/wallpapers/org.kde.image/contents/config/main.xml"

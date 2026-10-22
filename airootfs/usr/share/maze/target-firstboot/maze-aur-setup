@@ -21,9 +21,11 @@ MAZE_REPO_PKGS=(
 
 # Third-party apps that only exist on the AUR — built with makepkg. 'paru' is
 # built from source so it matches this system's libalpm ABI.
+# mullvad-browser-bin is deliberately NOT here: it is not part of the default
+# Maze desktop (the installer never installs it), so the fallback must not either.
 PKGS=(
     paru
-    mullvad-browser-bin upscayl-bin session-desktop-bin
+    upscayl-bin session-desktop-bin
     joplin-bin onlyoffice-bin
 )
 

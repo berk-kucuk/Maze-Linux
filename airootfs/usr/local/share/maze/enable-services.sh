@@ -62,9 +62,8 @@ systemctl mask passim.service avahi-daemon.socket avahi-daemon.service >/dev/nul
 # firewalld DAEMON over D-Bus and therefore cannot work in this chroot — nothing
 # is running here. So the rule was silently never added and the app's port stayed
 # closed on every ISO and every install made from it. Add it the offline way,
-# exactly like kdeconnect above (same TCP/UDP-port shape, same trust model).
+# exactly like the ssh rule below.
 if command -v firewall-offline-cmd >/dev/null 2>&1; then
     firewall-offline-cmd --add-service=ssh          >/dev/null 2>&1 || true
-    firewall-offline-cmd --add-service=kdeconnect   >/dev/null 2>&1 || true
     firewall-offline-cmd --add-service=maze-connect >/dev/null 2>&1 || true
 fi

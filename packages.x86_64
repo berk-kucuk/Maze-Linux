@@ -195,7 +195,6 @@ kwalletmanager
 gnome-keyring
 filelight
 partitionmanager
-kdeconnect
 # Web browser, email & media
 firefox
 thunderbird
@@ -350,6 +349,13 @@ wl-clipboard
 steam
 lib32-vulkan-intel
 lib32-vulkan-radeon
+# 32-bit halves of maze-gaming's GameMode/MangoHud, plus gamescope. They are
+# only optdepends of maze-gaming (lib32-* need [multilib], and a hard
+# dependency there would block maze-meta upgrades on any machine without it),
+# so the ISO installs them here, next to steam.
+lib32-gamemode
+lib32-mangohud
+gamescope
 
 # === Maze Linux: optional AUR apps (auto-managed by tools/build-aur.sh) ===
 # If one of these fails to build, build-aur.sh comments it out (#MAZE-SKIP#)
