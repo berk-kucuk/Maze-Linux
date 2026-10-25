@@ -535,7 +535,20 @@ _maze_sb_sign_esp() {
     # TPM is simply wrong for a privacy distro. The installed system's cmdline
     # is written separately (maze-installer 70-cmdline-uki) and keeps measured
     # boot; maze-secureboot skips only its NvPCR units there.
-    local cmdline="archisobasedir=${install_dir} archisosearchuuid=${iso_uuid} copytoram=n systemd.tpm2_measured_os=0 quiet splash bgrt_disable logo.nologo lsm=landlock,lockdown,yama,integrity,apparmor,bpf apparmor=1 security=apparmor"
+    #
+    # plymouth.use-simpledrm: the live initramfs has no 'kms' hook (see
+    # airootfs/etc/mkinitcpio.conf.d/archiso.conf), so the only DRM device
+    # until the squashfs is mounted is simpledrm on the firmware framebuffer —
+    # and Plymouth ignores simpledrm by default, waiting for a real GPU driver.
+    # On real hardware that driver (i915, amdgpu, ...) only loads from the
+    # squashfs, so the whole USB read showed a bare grey/black screen and no
+    # splash. Plymouth hands over to the real driver itself once it appears.
+    #
+    # plymouth.ignore-serial-consoles: systemd-stub adds console=ttyS0/hvc0
+    # when it boots in a VM, and Plymouth forces the text "details" splash on
+    # any serial console — so VMs scrolled boot messages instead of the theme.
+    # The installed system's cmdline (70-cmdline-uki) is not affected.
+    local cmdline="archisobasedir=${install_dir} archisosearchuuid=${iso_uuid} copytoram=n systemd.tpm2_measured_os=0 quiet splash plymouth.use-simpledrm plymouth.ignore-serial-consoles bgrt_disable logo.nologo lsm=landlock,lockdown,yama,integrity,apparmor,bpf apparmor=1 security=apparmor"
 
     # Build the UKI. --cmdline=@file would be safer for weird chars, but the
     # archiso cmdline has none; passing it inline is fine and avoids quoting

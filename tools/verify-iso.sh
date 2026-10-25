@@ -205,6 +205,12 @@ if [[ -s "${GRUB}" ]]; then
         grep -qw "systemd.tpm2_measured_os=0" <<<"${cmd}" \
             && ok "systemd.tpm2_measured_os=0 — canlı ortam makinenin TPM'ine yazmaz" \
             || bad "systemd.tpm2_measured_os=0 yok — canlı ortam açıldığı makinenin TPM'ine SRK/EK yazar ve NvPCR birimleri canlıda FAIL olur"
+        grep -qw "plymouth.use-simpledrm" <<<"${cmd}" \
+            && ok "plymouth.use-simpledrm — splash firmware framebuffer'ında hemen açılır" \
+            || bad "plymouth.use-simpledrm yok — initramfs'te kms hook'u olmadığından gerçek donanımda USB okunurken splash yerine boş/gri ekran"
+        grep -qw "plymouth.ignore-serial-consoles" <<<"${cmd}" \
+            && ok "plymouth.ignore-serial-consoles — VM'de seri konsol splash'ı yazı moduna düşürmez" \
+            || bad "plymouth.ignore-serial-consoles yok — VM'de (systemd-stub console=ttyS0/hvc0 ekler) splash yerine boot mesajları akar"
         [[ "$(printf '%s' "${cmd}" | wc -l)" -eq 0 ]] \
             && ok "cmdline tek satır" || bad "cmdline birden fazla satır"
     fi
