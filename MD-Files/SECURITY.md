@@ -38,7 +38,7 @@ In scope:
 - Secure Boot signing (`maze-sb-sign`, kernel-install integration, MOK
   handling)
 - The `[mazelinux]` and `[maze-aur]` pacman repositories and their signing
-- Maze's own tools (`maze-guardd`, `maze-panic`, `maze-gpu-driver`, QLAM,
+- Maze's own tools (`maze-switchd`, `maze-panic`, `maze-gpu-driver`, QLAM,
   entropy-shield, sentinai, haze, hazedrop, linux-chan-ai, …)
 - Default hardening configuration (sysctl, sshd, AppArmor profiles, firewalld
   rules) shipped by Maze

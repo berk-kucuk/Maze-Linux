@@ -15,7 +15,7 @@ SERVICES=(
     tor.service
     # Privileged-action broker for the panic widget + hardware kill switches
     # (so the panic tray plasmoid works in the live session too).
-    maze-guardd.service
+    maze-switchd.service
     # MAC address randomisation. The daemon is what writes the NetworkManager
     # drop-in, and it deletes that drop-in again when it stops, so the shipped
     # /etc/maze-cloak/config.json defaults only take effect while this runs.

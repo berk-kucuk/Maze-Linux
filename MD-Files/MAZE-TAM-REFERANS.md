@@ -271,7 +271,7 @@ Kullanıcıya dönük her araç burada:
 | `maze-control-center` | Merkezi ayar paneli |
 | `maze-hardware` | Donanım kill switch arayüzü (kamera, mikrofon, BT, WiFi, USB) |
 | `maze-killswitch` | Aynısının CLI'ı |
-| `maze-guardd` | Kill switch'leri uygulayan ayrıcalıklı daemon (`/run/maze/guard.sock`) |
+| `maze-switchd` | Kill switch'leri uygulayan ayrıcalıklı daemon (`/run/maze/switch.sock`) |
 | `maze-panic` / `maze-panic-restore` | Ağı kes, geçmişi sil, oturumu kilitle |
 | `maze-kernel` / `maze-kernel-helper` | Çekirdek değiştirici (pin mekanizması) |
 | `maze-sentinel` | Sistem izleme servisi |

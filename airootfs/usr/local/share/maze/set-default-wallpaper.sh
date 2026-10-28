@@ -23,6 +23,16 @@ patched = re.sub(
     r'\g<1>' + wall + r'\g<2>',
     data, count=1, flags=re.DOTALL,
 )
+# Fill colour behind the image: black instead of upstream #ffffff. On the first
+# login Plasma briefly shows a plain org.kde.image desktop (maze-apply-wallpaper
+# switches it to com.mazelinux.wallpaper a moment later); until its image has
+# loaded it paints this colour, which was a ~1-2 s full-screen white flash right
+# after the black splash.
+patched = re.sub(
+    r'(<entry name="Color"[^>]*>.*?<default>).*?(</default>)',
+    r'\g<1>#000000\g<2>',
+    patched, count=1, flags=re.DOTALL,
+)
 if patched != data:
     open(path, "w", encoding="utf-8").write(patched)
 PY
