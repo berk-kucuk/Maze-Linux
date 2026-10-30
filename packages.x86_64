@@ -251,7 +251,8 @@ mazelinux-keyring
 # maze-meta — the SINGLE source of truth for the default Maze package set. It
 # depends on every maze-* package (config, branding, and the default Maze apps:
 # maze-guard, entropy-shield, qlam, hazedrop, haze, maze-ai, maze-connect,
-# maze-cloak, maze-store, maze-donate, plasma6-applets-ai-usage (installed, not on the panel) — NOT
+# maze-cloak, maze-store, maze-donate, maze-capsule, maze-vault,
+# plasma6-applets-ai-usage (installed, not on the panel) — NOT
 # linux-chan-ai/sentinai, which can talk to Google Gemini) PLUS
 # curated security tooling (firejail), so listing it here pulls the whole desktop
 # in. To add a new default package: edit maze-meta's depends + bump pkgrel and
@@ -272,6 +273,11 @@ maze-store
 # the signed list against the Maze key. maze-meta >= 1.8.0 depends on it; listed
 # explicitly for the same reason as maze-store above.
 maze-donate
+# maze-capsule — encrypted capsules for files (gocryptfs, no root) — and
+# maze-vault — Bitwarden/Vaultwarden-compatible password manager. maze-meta
+# >= 1.9.0 depends on both; listed explicitly for the same reason as maze-store.
+maze-capsule
+maze-vault
 # maze-installer is the live-ISO-only Calamares installer — deliberately NOT part
 # of maze-meta (it must never land on an installed desktop), so list it here.
 maze-installer
@@ -317,7 +323,7 @@ ollama
 # itself runs well INSIDE a VM.
 # Desktop apps & utilities
 discord
-bitwarden
+# bitwarden: replaced by maze-vault (Bitwarden/Vaultwarden-compatible, via maze-meta)
 btop
 fastfetch
 bash-completion

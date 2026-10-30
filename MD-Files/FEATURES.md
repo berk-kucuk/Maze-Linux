@@ -129,6 +129,12 @@ Maze ships a suite of in‑house utilities developed for the distribution:
   into one area, and `--json` emits it all machine‑readably. No GUI, no network
   calls — it reuses the same `maze_status` probes as the desktop apps.
 - **QLAM** — a modern antivirus GUI powered by ClamAV.
+- **Maze Vault** — the password manager. A Bitwarden‑compatible client for
+  your own Vaultwarden (or a vault kept only on this computer), syncing with
+  the Bitwarden app on your phone; everything is encrypted before it leaves
+  the machine.
+- **Maze Capsule** — separate encrypted spaces for files and folders
+  (gocryptfs, no root), each one a portable folder with a recovery key.
 - **entropy‑shield**, **sentinai**, **haze**, **hazedrop**, **linux‑chan‑ai**,
   **maze** — Maze’s own security and AI tooling, preinstalled and ready.
 
@@ -142,7 +148,7 @@ A genuinely usable desktop the moment you boot:
 - **Productivity:** ONLYOFFICE, Joplin, KDE apps (Dolphin, Kate, Okular,
   Gwenview, Ark, …).
 - **Communication & media:** Discord, Session, VLC.
-- **Utilities:** Bitwarden, FileZilla, btop, fastfetch, KDE Partition Manager,
+- **Utilities:** Maze Vault (password manager), FileZilla, btop, fastfetch, KDE Partition Manager,
   Btrfs Assistant, Distrobox.
 
 ## Developer & virtualization
