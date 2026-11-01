@@ -135,6 +135,14 @@ Maze ships a suite of in‑house utilities developed for the distribution:
   the machine.
 - **Maze Capsule** — separate encrypted spaces for files and folders
   (gocryptfs, no root), each one a portable folder with a recovery key.
+- **Maze Scrub** — the metadata cleaner. Shows what a photo or document
+  reveals (GPS position, your name, the phone's serial number) before
+  removing it with mat2; originals are kept or sent to the Trash, never lost.
+  Right‑click any file or folder in Dolphin → *Remove metadata*.
+- **Maze Glovebox** — opens a suspicious file (an unexpected attachment, a
+  download you are not sure of) as a copy, with your usual app, inside a
+  sealed box: no network, none of your files, no D‑Bus — and nothing left
+  behind when it closes. Right‑click any file in Dolphin → *Open in Glovebox*.
 - **entropy‑shield**, **sentinai**, **haze**, **hazedrop**, **linux‑chan‑ai**,
   **maze** — Maze’s own security and AI tooling, preinstalled and ready.
 
