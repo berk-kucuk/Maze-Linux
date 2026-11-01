@@ -163,8 +163,8 @@ sddm
 sddm-kcm
 # Core KDE applications
 konsole
-# yakuake — drop-down terminal (autostarts in the background, toggle with F12).
-# Skel ships the 'monochrome' skin + yakuakerc + the F12 global shortcut.
+# yakuake — stays installed for those who want it, but no longer autostarts:
+# since maze-plasma-config 1.2.6, F12 drops down Maze Terminal instead.
 yakuake
 dolphin
 dolphin-plugins
