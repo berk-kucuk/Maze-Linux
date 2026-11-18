@@ -70,6 +70,12 @@ OPTIONAL=(
 )
 
 PACKAGES=("${REQUIRED[@]}" "${OPTIONAL[@]}")
+# PIN_ONLY: fetched and kept current here but NOT built into the ISO. build.sh
+# pins every clone under ./aur, and the installer builds an AUR package on the
+# target only at its pinned commit — onlyoffice-bin is kept off the ISO for
+# size and built during the install, yay is paru's fallback. Without a current
+# clone they would not be built at all.
+PIN_ONLY=(onlyoffice-bin yay)
 
 is_required() { local p; for p in "${REQUIRED[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
 
@@ -105,7 +111,7 @@ esac
 mkdir -p "${BUILDDIR}" "${LOCALREPO}" "$(dirname "${CHROOT}")"
 
 echo ">> Fetching AUR sources via git"
-for pkg in "${PACKAGES[@]}"; do
+for pkg in "${PACKAGES[@]}" "${PIN_ONLY[@]}"; do
     if [[ -d "${BUILDDIR}/${pkg}/.git" ]]; then
         git -C "${BUILDDIR}/${pkg}" pull --ff-only >/dev/null 2>&1 && echo "   updated ${pkg}" || echo "   (kept) ${pkg}"
     else

@@ -29,6 +29,16 @@ PKGS=(
     joplin-bin onlyoffice-bin
 )
 
+# Each is built only at the commit pinned in this file — the AUR clones the ISO
+# was built from (written by MazeLinux/build.sh). The PKGBUILD runs as you and
+# its .install scriptlet as root, so building whatever the AUR serves today
+# would let a hijacked package take over this machine. Packages with no pin
+# are left for paru, which shows the PKGBUILD before building.
+AUR_PINS="${MAZE_AUR_PINS:-/usr/share/maze/aur-pins}"
+aur_pin() {
+    awk -v p="$1" '$1 == p && $2 ~ /^[0-9a-f]{40}$/ { print $2; exit }' "${AUR_PINS}" 2>/dev/null
+}
+
 # Verbose git/makepkg/pacman output goes only to this log; the window shows just
 # short status lines.
 VLOG="${HOME:-/tmp}/.local/state/maze/aur-install.log"
@@ -91,11 +101,27 @@ if ! retry 3 sudo pacman -Syu --noconfirm --needed base-devel git; then
     exit 1
 fi
 
-# Clone, build and install one AUR package by name. Returns 0 on success.
+# Clone (at its pinned commit), build and install one AUR package by name.
+# Returns 0 on success (or if it is already installed), 1 on failure, 3 when it
+# has no pin and is not built.
 build_one() {
-    local pkg="$1" tmp ok=1
+    local pkg="$1" tmp ok=1 pin
+    # Never rebuild what is installed: the pin is the ISO's version, so a
+    # rebuild would DOWNGRADE an app you have updated since.
+    if pacman -Qq "${pkg}" >/dev/null 2>&1; then
+        printf '   -> %s is already installed.\n' "${pkg}"
+        return 0
+    fi
+    pin="$(aur_pin "${pkg}")"
+    if [[ -z "${pin}" ]]; then
+        printf '%s   -> %s has no pinned commit: not building unreviewed AUR code.%s\n' "${c_warn}" "${pkg}" "${c_reset}"
+        printf '      Install it with %sparu -S %s%s (paru shows the PKGBUILD first).\n' "${c_acc}" "${pkg}" "${c_reset}"
+        return 3
+    fi
     tmp="$(mktemp -d)"
-    if retry 3 git clone --depth 1 "https://aur.archlinux.org/${pkg}.git" "${tmp}/${pkg}" \
+    if retry 3 git clone "https://aur.archlinux.org/${pkg}.git" "${tmp}/${pkg}" \
+        && git -C "${tmp}/${pkg}" -c advice.detachedHead=false checkout --quiet --detach "${pin}" >>"${VLOG}" 2>&1 \
+        && [[ "$(git -C "${tmp}/${pkg}" rev-parse HEAD)" == "${pin}" ]] \
         && retry 2 bash -c 'cd "$1" && makepkg -s --noconfirm --needed' _ "${tmp}/${pkg}"; then
         shopt -s nullglob
         local pkgfiles=("${tmp}/${pkg}"/*.pkg.tar.*)
@@ -110,6 +136,7 @@ build_one() {
 }
 
 failed=()
+unpinned=()
 
 # Maze's own applications: install from the [mazelinux] repo with pacman -S
 # (the databases were refreshed by the -Syu above; retried). Only the
@@ -135,28 +162,34 @@ total=${#PKGS[@]}; i=0
 for pkg in "${PKGS[@]}"; do
     ((i++))
     printf '%s:: (%s/%s) Installing %s from the AUR...%s\n' "${c_acc}" "${i}" "${total}" "${pkg}" "${c_reset}"
-    if build_one "${pkg}"; then
-        printf '   -> %s installed.\n' "${pkg}"
-    else
-        printf '%s   -> ERROR: %s failed (see %s).%s\n' "${c_warn}" "${pkg}" "${VLOG}" "${c_reset}"
-        failed+=("${pkg}")
-    fi
+    build_one "${pkg}"
+    case $? in
+        0) printf '   -> %s done.\n' "${pkg}" ;;
+        3) unpinned+=("${pkg}") ;;
+        *) printf '%s   -> ERROR: %s failed (see %s).%s\n' "${c_warn}" "${pkg}" "${VLOG}" "${c_reset}"
+           failed+=("${pkg}") ;;
+    esac
 done
 
 # AUR helper fallback: if paru did not install, try yay (also from source) so the
 # system still has a usable helper.
 if printf '%s\n' "${PKGS[@]}" | grep -qx paru && ! pacman -Qq paru >/dev/null 2>&1; then
     printf '%s:: paru not installed — falling back to yay%s\n' "${c_warn}" "${c_reset}"
-    if build_one yay; then
-        printf '%s:: yay installed (paru fallback)%s\n' "${c_ok}" "${c_reset}"
-        _kept=()
-        for _x in "${failed[@]}"; do [[ "${_x}" == paru ]] || _kept+=("${_x}"); done
-        failed=("${_kept[@]}")
-    else
-        failed+=("yay")
-    fi
+    build_one yay
+    case $? in
+        0) printf '%s:: yay installed (paru fallback)%s\n' "${c_ok}" "${c_reset}"
+           _kept=()
+           for _x in "${failed[@]}"; do [[ "${_x}" == paru ]] || _kept+=("${_x}"); done
+           failed=("${_kept[@]}") ;;
+        3) unpinned+=(yay) ;;
+        *) failed+=("yay") ;;
+    esac
 fi
 
+if [[ ${#unpinned[@]} -gt 0 ]]; then
+    printf '\n%sNot built (no pinned commit): %s%s — install them with paru if you want them.\n' \
+        "${c_warn}" "${unpinned[*]}" "${c_reset}"
+fi
 if [[ ${#failed[@]} -eq 0 ]]; then
     mkdir -p "$(dirname "${MARKER}")"
     : > "${MARKER}"

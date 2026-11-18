@@ -288,7 +288,7 @@ maze-scrub
 # same reason as maze-store.
 maze-glovebox
 # maze-terminal — the default terminal (QTerminal fork with a paste guard, Tor
-# and incognito tabs). maze-meta >= 1.10.0 depends on it; Konsole stays above.
+# and incognito tabs). maze-meta >= 1.11.0 depends on it; Konsole stays above.
 maze-terminal
 # maze-installer is the live-ISO-only Calamares installer — deliberately NOT part
 # of maze-meta (it must never land on an installed desktop), so list it here.

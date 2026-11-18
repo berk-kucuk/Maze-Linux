@@ -274,7 +274,7 @@ apparmor=1 security=apparmor
 | mkinitcpio preset | archiso preset | `PRESETS=()` (UKI kullanıldığı için) |
 | sudo | Parolasız (`10-maze`) | **Parola zorunlu** (`10-maze-wheel`) |
 | Autologin | Var | Yok |
-| sshd | Açık (uzaktan kurulum için) | **Kapalı** |
+| sshd | **Kapalı** (2026-11: archiso'nun uzaktan kurulum için açık bıraktığı sshd kapatıldı — canlı oturumda `passwd` ile parola koyan biri LAN'a SSH açmış oluyordu; gerekirse `sudo systemctl start sshd`) | **Kapalı** |
 | journald | `Storage=volatile` | Kalıcı (varsayılan) |
 | pacman keyring | Her boot'ta `pacman-init.service` | Kurulumda bir kez, kalıcı |
 | Tarayıcı | Firefox (kurumsal politika ile Maze ana sayfası) | Firefox (stok varsayılanlar) |
