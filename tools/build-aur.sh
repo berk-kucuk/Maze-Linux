@@ -40,8 +40,19 @@ DBNAME="maze-aur"
 # (see pacman.conf) instead of building them from the AUR.
 REQUIRED=(
     # Microsoft-signed shim — Secure Boot depends on it (live ISO + installer).
+    # Built from Maze's own PKGBUILD (see IN_TREE below), not the AUR.
     shim-signed
 )
+
+# IN_TREE: packages built from ./pkgbuilds/<name> in this repository instead of
+# an AUR clone. shim-signed is one because maze-secureboot depends on it on
+# every installed machine, so it is published in [mazelinux] under that name;
+# the AUR package of that name was retired (2026-07) for shim-signed-bin, which
+# conflicts with it and never replaces it. See pkgbuilds/shim-signed/PKGBUILD.
+IN_TREE=(shim-signed)
+is_in_tree() { local p; for p in "${IN_TREE[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
+# Where a package's PKGBUILD lives.
+src_dir() { if is_in_tree "$1"; then echo "${ROOT}/pkgbuilds/$1"; else echo "${BUILDDIR}/$1"; fi; }
 
 # OPTIONAL: desktop/AI/privacy apps. If one fails to build it is skipped with a
 # warning (the ISO build still succeeds) instead of aborting everything.
@@ -53,7 +64,6 @@ OPTIONAL=(
     upscayl-bin
     session-desktop-bin
     joplin-bin
-    claude-code
     # paru — AUR helper, shipped on the ISO so the installer does not have to
     # compile it (Rust) at install time. Built from source, never paru-bin: it
     # links the libalpm of this build, which is the one the ISO ships. Rebuild
@@ -112,6 +122,7 @@ mkdir -p "${BUILDDIR}" "${LOCALREPO}" "$(dirname "${CHROOT}")"
 
 echo ">> Fetching AUR sources via git"
 for pkg in "${PACKAGES[@]}" "${PIN_ONLY[@]}"; do
+    is_in_tree "${pkg}" && { echo "   in-tree ${pkg} (pkgbuilds/${pkg})"; continue; }
     if [[ -d "${BUILDDIR}/${pkg}/.git" ]]; then
         git -C "${BUILDDIR}/${pkg}" pull --ff-only >/dev/null 2>&1 && echo "   updated ${pkg}" || echo "   (kept) ${pkg}"
     else
@@ -140,6 +151,14 @@ pkg_field() {
 # srcinfo_version <clone-dir> — "[epoch:]pkgver-pkgrel" the AUR currently ships,
 # from the .SRCINFO the git pull above just updated (empty if unknown).
 srcinfo_version() {
+    # An in-tree PKGBUILD has no .SRCINFO: read its version from the PKGBUILD
+    # itself (our own file, sourced in a subshell).
+    if [[ ! -f "$1/.SRCINFO" && -f "$1/PKGBUILD" ]]; then
+        # shellcheck disable=SC1091,SC2154  # pkgver/pkgrel come from the PKGBUILD
+        ( source "$1/PKGBUILD" >/dev/null 2>&1 \
+          && printf '%s%s-%s\n' "${epoch:+${epoch}:}" "${pkgver}" "${pkgrel}" )
+        return 0
+    fi
     [[ -f "$1/.SRCINFO" ]] || return 0
     awk -F' = ' '/^\t(epoch|pkgver|pkgrel) = /{ sub(/^\t/, "", $1); v[$1] = $2 }
         END { if (v["pkgver"] != "" && v["pkgrel"] != "")
@@ -175,7 +194,7 @@ index_localrepo
 already=()
 for pkg in "${PACKAGES[@]}"; do
     [[ -n "${LOCAL_FILE[${pkg}]+x}" ]] || continue
-    aur_ver="$(srcinfo_version "${BUILDDIR}/${pkg}")"
+    aur_ver="$(srcinfo_version "$(src_dir "${pkg}")")"
     if [[ -n "${aur_ver}" ]] && (( $(vercmp "${aur_ver}" "${LOCAL_VER[${pkg}]}") > 0 )); then
         echo "   outdated: ${pkg} ${LOCAL_VER[${pkg}]} -> ${aur_ver} (rebuilding)"
         continue
@@ -200,15 +219,16 @@ while [[ ${#remaining[@]} -gt 0 && ${pass} -lt ${MAXPASS} ]]; do
     built_this_pass=0
     still=()
     for pkg in "${remaining[@]}"; do
-        [[ -d "${BUILDDIR}/${pkg}" ]] || { echo "   skipping ${pkg} (no source)"; continue; }
+        pdir="$(src_dir "${pkg}")"
+        [[ -d "${pdir}" ]] || { echo "   skipping ${pkg} (no source)"; continue; }
         echo "   [pass ${pass}] building ${pkg}"
         inject=()
         if [[ ${pass} -gt 1 ]]; then
             for f in "${built_files[@]}"; do inject+=(-I "${f}"); done
         fi
-        if ( cd "${BUILDDIR}/${pkg}" && makechrootpkg -c -r "${CHROOT}" "${inject[@]}" ); then
+        if ( cd "${pdir}" && makechrootpkg -c -r "${CHROOT}" "${inject[@]}" ); then
             index_localrepo
-            for f in "${BUILDDIR}/${pkg}"/*.pkg.tar.*; do
+            for f in "${pdir}"/*.pkg.tar.*; do
                 [[ -e "${f}" && "${f}" != *.sig ]] || continue
                 n="$(pkg_field "${f}" Name)"
                 # makepkg's default OPTIONS=(debug) emits <pkg>-debug split

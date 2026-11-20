@@ -243,7 +243,7 @@ Tabloda hiç geçmeyen, gerçekte set edilenler: `dev.tty.ldisc_autoload=0`, `fs
 
 ### 21. Belgelenmemiş paketler (ISO'da var, wiki'de yok)
 
-`steam` + `lib32-vulkan-*` (oyun desteği), `claude-code` (kurulumda da çekiliyor), `clamtk` (ikinci ClamAV GUI), `yakuake`, `konsole`, `irssi`, `mc`, `clonezilla`, `testdisk`, `ddrescue`, `fsarchiver`, `partclone`, `partimage`, `gpart` (kurtarma araç seti), `plymouth` (boot splash), `sequoia-sq`, `openpgp-card-tools`, `libfido2` (FIDO2/donanım anahtarı), `tpm2-tools` / `tpm2-tss` (TPM), `tesseract-data-tur` (Türkçe OCR), `onionshare` (`Privacy.md`'de var ✓, `Tools.md`'de kısmen).
+`steam` + `lib32-vulkan-*` (oyun desteği), `clamtk` (ikinci ClamAV GUI), `yakuake`, `konsole`, `irssi`, `mc`, `clonezilla`, `testdisk`, `ddrescue`, `fsarchiver`, `partclone`, `partimage`, `gpart` (kurtarma araç seti), `plymouth` (boot splash), `sequoia-sq`, `openpgp-card-tools`, `libfido2` (FIDO2/donanım anahtarı), `tpm2-tools` / `tpm2-tss` (TPM), `tesseract-data-tur` (Türkçe OCR), `onionshare` (`Privacy.md`'de var ✓, `Tools.md`'de kısmen).
 
 ### 22. Belgelenmemiş Maze uygulamaları
 

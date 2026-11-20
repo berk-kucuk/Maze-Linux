@@ -52,3 +52,9 @@ Thumbs.db
 /brag-output*/
 /videos/
 /maze-promo/
+
+# --- makepkg output for the in-tree PKGBUILDs (pkgbuilds/*) ---
+/pkgbuilds/*/src/
+/pkgbuilds/*/pkg/
+/pkgbuilds/*/*.rpm
+/pkgbuilds/*/*.log

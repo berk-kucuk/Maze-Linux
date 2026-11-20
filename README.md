@@ -48,10 +48,12 @@ systems get fixes through `pacman -Syu` and the ISO simply installs them.
 
 `pacman.conf` combines three sources:
 
-1. **`[maze-aur]`** (`./localrepo`, listed first): packages that are only on the
-   AUR, built locally by `tools/build-aur.sh`. These are `shim-signed`
-   (required), plus `paru`, `calamares`, `obfs4proxy`, `upscayl-bin` and a few
-   other optional apps. Because it comes first, it also works as a **staging
+1. **`[maze-aur]`** (`./localrepo`, listed first): packages built locally by
+   `tools/build-aur.sh` — `shim-signed` (required; from Maze's own
+   `pkgbuilds/shim-signed`, also published in `[mazelinux]` because
+   `maze-secureboot` depends on it on installed systems), plus AUR builds of
+   `paru`, `calamares`, `obfs4proxy`, `upscayl-bin` and a few other optional
+   apps. Because it comes first, it also works as a **staging
    area**: a package dropped here overrides the published `[mazelinux]` version
    in the next ISO build.
 2. **`[mazelinux]`** (<https://mazerepo.berkkucukk.com.tr/packages>): Maze's own

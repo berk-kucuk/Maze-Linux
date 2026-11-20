@@ -1,0 +1,42 @@
+# Maintainer: Berk Küçük <dev.berkkucukk@gmail.com>
+# Contributor: nl6720 <nl6720@archlinux.org>  (AUR shim-signed / shim-signed-bin)
+#
+# Maze's own copy of the Microsoft-signed shim, published in [mazelinux].
+#
+# WHY IT LIVES HERE AND NOT IN THE AUR
+# ------------------------------------
+# maze-secureboot depends on 'shim-signed' and turns every update of it into a
+# shim on the ESP (on trial first; see maze-sb-sign). For that the package has
+# to reach installed machines through [mazelinux] under THIS name. The AUR
+# package of the same name was retired (2026-07) in favour of 'shim-signed-bin',
+# which conflicts with it and does not replace it — so pacman would leave every
+# installed Maze on the old, frozen package forever.
+#
+# UPDATING
+# --------
+# Fedora rebuilds the shim package often without changing the binary (16.1-7 to
+# 16.1-10 all carry the same shimx64.efi). A new release here is only worth
+# publishing when shimx64.efi itself changes, e.g. for an SBAT revocation:
+#   1. pick the new build at https://kojipkgs.fedoraproject.org/packages/shim/
+#   2. set pkgver below (16.1-11 -> 16.1+fedora+11), pkgrel=1
+#   3. updpkgsums   (or copy the sums from AUR shim-signed-bin, then compare)
+#   4. ./tools/build-aur.sh builds it into ./localrepo; publish to [mazelinux]
+
+pkgname='shim-signed'
+pkgver='16.1+fedora+10'
+pkgrel='1'
+pkgdesc='Initial UEFI bootloader that handles chaining to a trusted full bootloader under secure boot environments (prebuilt x64 and AA64 binaries from Fedora)'
+url='https://koji.fedoraproject.org/koji/packageinfo?packageID=14502'
+arch=('any')
+license=('BSD-2-Clause')
+options=('!strip' '!debug')
+install="${pkgname}.install"
+source=("https://kojipkgs.fedoraproject.org/packages/shim/${pkgver//+fedora+/\/}/x86_64/shim-x64-${pkgver//+fedora+/-}.x86_64.rpm"
+        "https://kojipkgs.fedoraproject.org/packages/shim/${pkgver//+fedora+/\/}/aarch64/shim-aa64-${pkgver//+fedora+/-}.aarch64.rpm")
+sha512sums=('7082a62e11481c9fc65e9fde3fa3beef25478fefd2593a434b361a9cb501c281f3c9b7fff1ce8d8c451a3826d58b7897a76e48e507c3c428161547c1bca91c80'
+            '51f834eea5bfe8d652a506ecfbeeb129f9f40cb96d13a5726cd2c2c1753f76e302ec4dd1e39665a782d8cd434298f2a8aa9c05f7ba4b94afb831c68d228809f3')
+
+package() {
+	install -Dm0644 -t "${pkgdir}/usr/share/${pkgname}/" "${srcdir}/usr/lib/efi/shim/${pkgver//+fedora+/-}/EFI/fedora/"{shim,mm}{x64,aa64}".efi"
+	install -Dm0644 -t "${pkgdir}/usr/share/${pkgname}/" "${srcdir}/usr/lib/efi/shim/${pkgver//+fedora+/-}/EFI/BOOT/fb"{x64,aa64}".efi"
+}

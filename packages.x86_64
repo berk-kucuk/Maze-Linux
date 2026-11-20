@@ -176,7 +176,7 @@ kcalc
 kfind
 kwalletmanager
 # gnome-keyring — the system's Secret Service (org.freedesktop.secrets), i.e. the
-# API every libsecret client stores logins through: Claude Code, VS Code,
+# API every libsecret client stores logins through: VS Code,
 # Electron/Chromium apps, and proton-vpn-gtk-app itself.
 #
 # It was ALREADY on the ISO, but only as a transitive dependency
@@ -395,7 +395,6 @@ obfs4proxy
 upscayl-bin
 session-desktop-bin
 joplin-bin
-claude-code
 # paru — the AUR helper. Built from source against the same pacman/libalpm the
 # ISO ships (so no ABI mismatch), instead of being compiled at install time
 # (~3.5 min, Rust toolchain download, network-dependent). The installer's AUR
