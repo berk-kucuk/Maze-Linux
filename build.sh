@@ -353,6 +353,9 @@ fi
 # (trap) so the working tree stays clean and portable.
 PACMAN_CONF="${PROFILE_DIR}/pacman.conf"
 PATCHED_MKARCHISO=""
+# RAM-only plaintext copy of a passphrase-protected ISO signing key (see
+# prepare_secureboot); removed by _cleanup however the build ends.
+MAZE_SB_KEY_TMP=""
 
 # A leftover .bak means a previous run died before its EXIT trap could restore the
 # file (e.g. the work disk went read-only mid-build). Stop here: the grep below
@@ -388,6 +391,9 @@ _cleanup() {
     local rc=$?
     restore_pacman_conf
     [[ -n "${PATCHED_MKARCHISO}" ]] && rm -f "${PATCHED_MKARCHISO}"
+    if [[ -n "${MAZE_SB_KEY_TMP}" ]]; then
+        shred -u "${MAZE_SB_KEY_TMP}" 2>/dev/null || rm -f "${MAZE_SB_KEY_TMP}"
+    fi
     # A FAILED build on a tmpfs work directory would otherwise pin ~16 GiB of RAM
     # until someone notices (the success path releases it itself). A failed build
     # on a real disk is still left alone for inspection. MAZE_KEEP_WORK=1 keeps
@@ -442,7 +448,29 @@ prepare_secureboot() {
         echo ">> Secure Boot: generating ISO signing key"
         "${PROFILE_DIR}/tools/gen-sb-keys.sh"
     fi
-    export MAZE_SB_KEY="${SB_KEYDIR}/Maze.key"
+    # The ISO key is trusted by every machine that enrolled it, so it may be
+    # kept passphrase-protected (tools/gen-sb-keys.sh -e). Then it is opened
+    # ONCE, here, into a root-only file in RAM that _cleanup shreds when the
+    # build ends; the key on disk is never written in plain text. For a build
+    # with no terminal, MAZE_SB_KEY_PASSFILE names a file holding the passphrase.
+    # An unprotected key keeps working exactly as before.
+    if grep -q 'ENCRYPTED' "${SB_KEYDIR}/Maze.key"; then
+        echo ">> Secure Boot: the ISO signing key is passphrase-protected"
+        MAZE_SB_KEY_TMP="$(mktemp /dev/shm/maze-sb-key.XXXXXX)" \
+            || { echo "Error: cannot create a RAM file for the signing key." >&2; exit 1; }
+        if ! openssl pkey -in "${SB_KEYDIR}/Maze.key" -out "${MAZE_SB_KEY_TMP}" \
+                ${MAZE_SB_KEY_PASSFILE:+-passin "file:${MAZE_SB_KEY_PASSFILE}"}; then
+            echo "Error: could not open ${SB_KEYDIR}/Maze.key (wrong passphrase?)." >&2
+            echo "       Without a terminal, set MAZE_SB_KEY_PASSFILE=/path/to/passphrase-file." >&2
+            exit 1
+        fi
+        export MAZE_SB_KEY="${MAZE_SB_KEY_TMP}"
+    else
+        echo ">> Secure Boot: NOTE - the ISO signing key is not passphrase-protected"
+        echo "   (every machine that enrolled it trusts what it signs; protect it with:"
+        echo "    tools/gen-sb-keys.sh -e)"
+        export MAZE_SB_KEY="${SB_KEYDIR}/Maze.key"
+    fi
     export MAZE_SB_CERT="${SB_KEYDIR}/Maze.crt"
     export MAZE_SB_CER="${SB_KEYDIR}/Maze.cer"
 
