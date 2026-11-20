@@ -5,7 +5,12 @@ iso_name="mazelinux"
 iso_label="MAZE_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
 iso_publisher="Maze Linux <https://mazelinux.berkkucukk.com.tr>"
 iso_application="Maze Linux Live/Install Medium"
-iso_version="$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m.%d)"
+# Maze ships one ISO a month, on the 26th, so the version is the build's year
+# and month plus a fixed day: an ISO built on 2026-11-20 is 2026.11.26. That
+# lets a release be built and tested in the days before it goes out.
+# MAZE_ISO_VERSION overrides it (e.g. an out-of-cycle rebuild:
+#   sudo env MAZE_ISO_VERSION=2026.11.28 ./build.sh).
+iso_version="${MAZE_ISO_VERSION:-$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y.%m).26}"
 install_dir="maze"
 cow_spacesize="6G"
 buildmodes=('iso')
